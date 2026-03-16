@@ -1,19 +1,33 @@
 import { AppState } from 'react-native';
-import { doc, setDoc, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, serverTimestamp, increment } from 'firebase/firestore';
 import { db, auth } from '../../constants/firebase';
 
+// ============================================
+// 기본 앱 목록 (초기화 시 사용)
+// ============================================
+const DEFAULT_APPS = {
+  youtube: { used: 0, limit: 60, name: 'YouTube', code: 'YT', color: '#FCEBEB', tc: '#791F1F' },
+  game:    { used: 0, limit: 60, name: 'Game (Roblox)', code: 'GE', color: '#FAEEDA', tc: '#633806' },
+  edu:     { used: 0, limit: null, name: 'EduApp', code: 'ED', color: '#EAF3DE', tc: '#27500A' },
+};
+
+const DEFAULT_DAILY_LIMIT = 240; // 4시간
+
+let trackingInterval = null;
 let appStateSubscription = null;
-let activeStartTime = null;
+let isAppActive = true;
 
-function getTodayKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+// ============================================
+// 오늘 날짜 문자열 (YYYY-MM-DD)
+// ============================================
+function getTodayString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function getScreenTimeRef(familyId, childUid) {
-  return doc(db, 'families', familyId, 'screentime', childUid);
-}
-
+// ============================================
+// 현재 유저의 familyId 가져오기
+// ============================================
 async function getFamilyId() {
   const user = auth.currentUser;
   if (!user) return null;
@@ -22,64 +36,107 @@ async function getFamilyId() {
   return userDoc.data().familyId || null;
 }
 
-async function addUsageMinutes(minutes) {
-  if (minutes <= 0) return;
+// ============================================
+// 스크린타임 문서 레퍼런스
+// ============================================
+function getScreentimeRef(familyId, childUid) {
+  return doc(db, 'families', familyId, 'screentime', childUid);
+}
+
+// ============================================
+// 1) 오늘 스크린타임 초기화 (아이 앱 시작 시)
+// ============================================
+export async function initScreentime() {
   const user = auth.currentUser;
   if (!user) return;
 
   const familyId = await getFamilyId();
   if (!familyId) return;
 
-  const ref = getScreenTimeRef(familyId, user.uid);
-  const todayKey = getTodayKey();
-
+  const ref = getScreentimeRef(familyId, user.uid);
   const snap = await getDoc(ref);
-  const existing = snap.exists() ? snap.data() : {};
-  const dailyUsage = existing.dailyUsage || {};
-  const currentMinutes = dailyUsage[todayKey] || 0;
+  const today = getTodayString();
 
-  await setDoc(ref, {
-    dailyUsage: { ...dailyUsage, [todayKey]: Math.round((currentMinutes + minutes) * 10) / 10 },
-    lastActiveAt: new Date().toISOString(),
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
+  if (!snap.exists() || snap.data().date !== today) {
+    // 이전 제한시간 유지, 사용량만 리셋
+    const prevData = snap.exists() ? snap.data() : {};
+    const prevApps = prevData.apps || {};
 
-  console.log(`Screen time +${minutes.toFixed(1)}min, total: ${(currentMinutes + minutes).toFixed(1)}min`);
+    const apps = {};
+    for (const [key, def] of Object.entries(DEFAULT_APPS)) {
+      apps[key] = {
+        ...def,
+        used: 0,
+        limit: prevApps[key]?.limit !== undefined ? prevApps[key].limit : def.limit,
+      };
+    }
+
+    await setDoc(ref, {
+      dailyUsage: 0,
+      dailyLimit: prevData.dailyLimit || DEFAULT_DAILY_LIMIT,
+      date: today,
+      apps,
+      lastActiveAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
 }
 
-export async function startScreenTimeTracking() {
-  if (appStateSubscription) return;
+// ============================================
+// 2) 사용시간 추적 시작 (1분마다 기록)
+// ============================================
+export async function startUsageTracking() {
+  if (trackingInterval) return;
 
-  activeStartTime = Date.now();
-
-  appStateSubscription = AppState.addEventListener('change', async (nextState) => {
-    if (nextState === 'active') {
-      activeStartTime = Date.now();
-    } else if (nextState === 'background' || nextState === 'inactive') {
-      if (activeStartTime) {
-        const elapsed = (Date.now() - activeStartTime) / 60000;
-        activeStartTime = null;
-        if (elapsed >= 0.1) {
-          try {
-            await addUsageMinutes(elapsed);
-          } catch (e) {
-            console.error('Failed to save screen time:', e);
-          }
-        }
-      }
-    }
+  // AppState 감지
+  appStateSubscription = AppState.addEventListener('change', (state) => {
+    isAppActive = state === 'active';
   });
 
-  console.log('Screen time tracking started');
+  trackingInterval = setInterval(async () => {
+    if (!isAppActive) return;
+
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const familyId = await getFamilyId();
+    if (!familyId) return;
+
+    const ref = getScreentimeRef(familyId, user.uid);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+
+    const data = snap.data();
+    if (data.date !== getTodayString()) return;
+
+    // 앱별 사용시간 시뮬레이션: 활성 앱 중 하나에 1분 추가
+    const apps = { ...data.apps };
+    const activeAppKeys = Object.keys(apps);
+    if (activeAppKeys.length > 0) {
+      const randomKey = activeAppKeys[Math.floor(Math.random() * activeAppKeys.length)];
+      apps[randomKey] = { ...apps[randomKey], used: (apps[randomKey].used || 0) + 1 };
+    }
+
+    try {
+      await setDoc(ref, {
+        dailyUsage: (data.dailyUsage || 0) + 1,
+        apps,
+        lastActiveAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (e) {
+      console.error('Failed to update screentime:', e);
+    }
+  }, 60000); // 1분마다
 }
 
-export function stopScreenTimeTracking() {
-  if (activeStartTime) {
-    const elapsed = (Date.now() - activeStartTime) / 60000;
-    activeStartTime = null;
-    if (elapsed >= 0.1) {
-      addUsageMinutes(elapsed).catch(console.error);
-    }
+// ============================================
+// 3) 사용시간 추적 중지
+// ============================================
+export function stopUsageTracking() {
+  if (trackingInterval) {
+    clearInterval(trackingInterval);
+    trackingInterval = null;
   }
   if (appStateSubscription) {
     appStateSubscription.remove();
@@ -87,22 +144,63 @@ export function stopScreenTimeTracking() {
   }
 }
 
-export function subscribeScreenTime(familyId, childUid, callback) {
-  const ref = getScreenTimeRef(familyId, childUid);
+// ============================================
+// 4) 실시간 구독 - 부모용 (특정 아이)
+// ============================================
+export function subscribeScreentime(familyId, childUid, callback) {
+  const ref = getScreentimeRef(familyId, childUid);
   return onSnapshot(ref, (snap) => {
     if (snap.exists()) {
-      const data = snap.data();
-      const todayKey = getTodayKey();
-      const usedMinutes = (data.dailyUsage && data.dailyUsage[todayKey]) || 0;
-      const dailyLimit = data.dailyLimit || 240;
-      callback({ usedMinutes: Math.round(usedMinutes), dailyLimit, lastActiveAt: data.lastActiveAt });
+      callback(snap.data());
     } else {
-      callback({ usedMinutes: 0, dailyLimit: 240, lastActiveAt: null });
+      callback(null);
     }
   });
 }
 
-export async function setDailyLimit(familyId, childUid, minutes) {
-  const ref = getScreenTimeRef(familyId, childUid);
-  await setDoc(ref, { dailyLimit: minutes, updatedAt: serverTimestamp() }, { merge: true });
+// ============================================
+// 5) 실시간 구독 - 아이용 (자기 자신)
+// ============================================
+export function subscribeMyScreentime(callback) {
+  const user = auth.currentUser;
+  if (!user) return () => {};
+
+  let unsubscribe = () => {};
+
+  getFamilyId().then((familyId) => {
+    if (!familyId) return;
+    const ref = getScreentimeRef(familyId, user.uid);
+    unsubscribe = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        callback(snap.data());
+      } else {
+        callback(null);
+      }
+    });
+  });
+
+  return () => unsubscribe();
+}
+
+// ============================================
+// 6) 부모: 일일 제한시간 변경
+// ============================================
+export async function updateDailyLimit(familyId, childUid, limit) {
+  const ref = getScreentimeRef(familyId, childUid);
+  await setDoc(ref, { dailyLimit: limit, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// ============================================
+// 7) 부모: 앱별 제한시간 변경
+// ============================================
+export async function updateAppLimit(familyId, childUid, appKey, limit) {
+  const ref = getScreentimeRef(familyId, childUid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+
+  const apps = { ...snap.data().apps };
+  if (apps[appKey]) {
+    apps[appKey] = { ...apps[appKey], limit };
+    await setDoc(ref, { apps, updatedAt: serverTimestamp() }, { merge: true });
+  }
 }
