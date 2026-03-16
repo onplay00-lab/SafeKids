@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "SafeKids",
+    "slug": "safekids",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "safekids",
+    "platforms": ["ios", "android", "web"],
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "SafeKids needs location access to keep your child safe.",
+          "locationAlwaysPermission": "SafeKids tracks location in the background for safety.",
+          "locationWhenInUsePermission": "SafeKids needs location to show where your child is."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "android": {
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ]
+    },
+    "ios": {
+      "infoPlist": {
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeKids needs location access to keep your child safe.",
+        "NSLocationAlwaysUsageDescription": "SafeKids tracks location in the background for safety.",
+        "NSLocationWhenInUseUsageDescription": "SafeKids needs location to show where your child is.",
+        "UIBackgroundModes": ["location"]
+      }
+    }
+  }
+}

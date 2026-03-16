@@ -1,10 +1,39 @@
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { Colors } from '../../constants/Colors';
+import { startLocationTracking } from '../../src/services/locationService';
 
 export default function ChildHome() {
+  const [locStatus, setLocStatus] = useState('위치 확인 중...');
+
+  useEffect(() => {
+    async function initLocation() {
+      try {
+        const result = await startLocationTracking();
+        if (result === 'active') {
+          setLocStatus('📍 위치 추적 활성화됨');
+        } else if (result === 'foreground-only') {
+          setLocStatus('📍 앱 사용 중에만 위치 확인');
+        } else {
+          setLocStatus('⚠️ 위치 권한이 필요합니다');
+        }
+      } catch (e) {
+        console.error(e);
+        setLocStatus('⚠️ 위치 서비스 오류');
+      }
+    }
+    initLocation();
+  }, []);
+
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <Text style={s.title}>SafeKids</Text>
+
+      {/* 위치 상태 표시 */}
+      <View style={s.locBar}>
+        <Text style={s.locText}>{locStatus}</Text>
+      </View>
+
       <View style={s.timerArea}>
         <View style={[s.timerRing, {borderColor:Colors.primaryLight}]}>
           <Text style={s.timerVal}>1h 45m</Text>
@@ -30,6 +59,8 @@ const s = StyleSheet.create({
   container:{flex:1, backgroundColor:Colors.white},
   content:{padding:20, paddingTop:60},
   title:{fontSize:22, fontWeight:'700', color:Colors.textPrimary, marginBottom:16},
+  locBar:{backgroundColor:'#E8F5E9', borderRadius:8, padding:10, marginBottom:16, alignItems:'center'},
+  locText:{fontSize:13, color:'#2E7D32'},
   timerArea:{alignItems:'center', marginBottom:20},
   timerRing:{width:140, height:140, borderRadius:70, borderWidth:8, alignItems:'center', justifyContent:'center', marginBottom:10},
   timerVal:{fontSize:24, fontWeight:'700', color:Colors.textPrimary},
