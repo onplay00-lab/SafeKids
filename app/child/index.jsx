@@ -2,9 +2,13 @@ import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { Colors } from '../../constants/Colors';
 import { startLocationTracking } from '../../src/services/locationService';
+import { initScreentime, startUsageTracking, stopUsageTracking, subscribeMyScreentime } from '../../src/services/screentimeService';
+
+function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}h ${mm}m` : `${mm}m`; }
 
 export default function ChildHome() {
   const [locStatus, setLocStatus] = useState('위치 확인 중...');
+  const [screenData, setScreenData] = useState(null);
 
   useEffect(() => {
     async function initLocation() {
@@ -25,6 +29,23 @@ export default function ChildHome() {
     initLocation();
   }, []);
 
+  useEffect(() => {
+    let unsubscribe = () => {};
+    async function init() {
+      await initScreentime();
+      await startUsageTracking();
+      unsubscribe = subscribeMyScreentime((data) => setScreenData(data));
+    }
+    init();
+    return () => { stopUsageTracking(); unsubscribe(); };
+  }, []);
+
+  const dailyUsage = screenData?.dailyUsage || 0;
+  const dailyLimit = screenData?.dailyLimit || 240;
+  const remaining = Math.max(0, dailyLimit - dailyUsage);
+  const apps = screenData?.apps || {};
+  const appEntries = Object.entries(apps);
+
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <Text style={s.title}>SafeKids</Text>
@@ -35,17 +56,32 @@ export default function ChildHome() {
       </View>
 
       <View style={s.timerArea}>
-        <View style={[s.timerRing, {borderColor:Colors.primaryLight}]}>
-          <Text style={s.timerVal}>1h 45m</Text>
+        <View style={[s.timerRing, { borderColor: remaining > 0 ? Colors.primaryLight : '#FCEBEB' }]}>
+          <Text style={s.timerVal}>{fmt(remaining)}</Text>
           <Text style={s.timerLabel}>Remaining</Text>
         </View>
-        <Text style={s.timerSub}>Today 2h 15m used / Limit 4h</Text>
+        <Text style={s.timerSub}>Today {fmt(dailyUsage)} used / Limit {fmt(dailyLimit)}</Text>
       </View>
       <View style={s.card}>
-        <View style={s.appRow}><Text style={s.appLabel}>YouTube</Text><Text style={s.appVal}>58min / 1h</Text></View>
-        <View style={s.bar}><View style={[s.barFill, {width:'97%', backgroundColor:'#BA7517'}]}/></View>
-        <View style={[s.appRow, {marginTop:12}]}><Text style={s.appLabel}>Game</Text><Text style={s.appVal}>42min / 1h</Text></View>
-        <View style={s.bar}><View style={[s.barFill, {width:'70%', backgroundColor:Colors.primary}]}/></View>
+        {appEntries.map(([key, app], i) => {
+          const pct = app.limit ? Math.min(100, Math.round((app.used / app.limit) * 100)) : 0;
+          const warn = app.limit && pct > 80;
+          return (
+            <View key={key} style={i > 0 ? { marginTop: 12 } : undefined}>
+              <View style={s.appRow}>
+                <Text style={s.appLabel}>{app.name}</Text>
+                <Text style={s.appVal}>{app.used}min{app.limit ? ` / ${fmt(app.limit)}` : ''}</Text>
+              </View>
+              {app.limit ? (
+                <View style={s.bar}>
+                  <View style={[s.barFill, { width: `${pct}%`, backgroundColor: warn ? '#BA7517' : Colors.primary }]} />
+                </View>
+              ) : (
+                <Text style={s.noLimit}>No limit</Text>
+              )}
+            </View>
+          );
+        })}
       </View>
       <View style={s.bonusCard}>
         <Text style={s.bonusTitle}>Need more time?</Text>
@@ -72,6 +108,7 @@ const s = StyleSheet.create({
   appVal:{fontSize:13, color:Colors.textPrimary},
   bar:{height:4, backgroundColor:Colors.border, borderRadius:2, marginTop:6},
   barFill:{height:4, borderRadius:2},
+  noLimit:{fontSize:11, color:Colors.textHint, marginTop:4},
   bonusCard:{backgroundColor:Colors.bg, borderRadius:12, padding:16},
   bonusTitle:{fontSize:15, fontWeight:'600', color:Colors.textPrimary, marginBottom:4},
   bonusDesc:{fontSize:13, color:Colors.textSecondary, marginBottom:12},

@@ -1,36 +1,96 @@
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
+import { useAuth } from '../../contexts/AuthContext';
+import { subscribeScreentime, updateAppLimit } from '../../src/services/screentimeService';
 
-const apps = [
-  {id:'1', name:'YouTube', code:'YT', used:58, limit:60, color:'#FCEBEB', tc:'#791F1F'},
-  {id:'2', name:'Game (Roblox)', code:'GE', used:42, limit:60, color:'#FAEEDA', tc:'#633806'},
-  {id:'3', name:'EduApp', code:'ED', used:35, limit:null, color:'#EAF3DE', tc:'#27500A'},
-];
+function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}h ${mm}m` : `${mm}m`; }
 
 export default function ParentScreenTime() {
+  const { familyId } = useAuth();
+  const [children, setChildren] = useState([]);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [screenData, setScreenData] = useState(null);
+
+  // 가족 내 아이 목록 로드
+  useEffect(() => {
+    if (!familyId) return;
+    async function loadChildren() {
+      const famDoc = await getDoc(doc(db, 'families', familyId));
+      if (!famDoc.exists()) return;
+      const childUids = famDoc.data().children || [];
+      const list = await Promise.all(childUids.map(async (uid) => {
+        const userDoc = await getDoc(doc(db, 'users', uid));
+        return { uid, name: userDoc.exists() ? (userDoc.data().name || userDoc.data().email?.split('@')[0]) : uid };
+      }));
+      setChildren(list);
+    }
+    loadChildren();
+  }, [familyId]);
+
+  // 선택된 아이의 스크린타임 실시간 구독
+  useEffect(() => {
+    if (!familyId || children.length === 0) { setScreenData(null); return; }
+    const child = children[selectedIdx];
+    if (!child) return;
+    const unsub = subscribeScreentime(familyId, child.uid, (data) => setScreenData(data));
+    return () => unsub();
+  }, [familyId, children, selectedIdx]);
+
+  const dailyUsage = screenData?.dailyUsage || 0;
+  const dailyLimit = screenData?.dailyLimit || 240;
+  const pctTotal = dailyLimit > 0 ? Math.round((dailyUsage / dailyLimit) * 100) : 0;
+  const apps = screenData?.apps || {};
+  const appEntries = Object.entries(apps);
+
+  function handleToggleLimit(appKey, app) {
+    if (!familyId || children.length === 0) return;
+    const child = children[selectedIdx];
+    const newLimit = app.limit ? null : 60; // 토글: 제한 있으면 해제, 없으면 60분으로 설정
+    updateAppLimit(familyId, child.uid, appKey, newLimit);
+  }
+
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <View style={s.headerRow}>
         <Text style={s.title}>Screen time</Text>
-        <View style={s.tabs}><View style={s.tabActive}><Text style={s.tabActiveText}>Junhyuk</Text></View><View style={s.tab}><Text style={s.tabText}>Seoyeon</Text></View></View>
+        <View style={s.tabs}>
+          {children.map((c, i) => (
+            <TouchableOpacity key={c.uid} style={i === selectedIdx ? s.tabActive : s.tab} onPress={() => setSelectedIdx(i)}>
+              <Text style={i === selectedIdx ? s.tabActiveText : s.tabText}>{c.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
       <View style={s.card}>
-        <View style={s.row}><Text style={s.cardLabel}>Today</Text><Text style={s.cardVal}>2h 15m / 4h</Text></View>
-        <View style={s.barBig}><View style={[s.barFillBig, {width:'56%'}]}/></View>
+        <View style={s.row}><Text style={s.cardLabel}>Today</Text><Text style={s.cardVal}>{fmt(dailyUsage)} / {fmt(dailyLimit)}</Text></View>
+        <View style={s.barBig}><View style={[s.barFillBig, { width: `${Math.min(100, pctTotal)}%` }]} /></View>
       </View>
       <Text style={s.section}>App usage</Text>
-      {apps.map(a => (
-        <View key={a.id} style={s.appRow}>
-          <View style={[s.appIcon, {backgroundColor:a.color}]}><Text style={[s.appIconText, {color:a.tc}]}>{a.code}</Text></View>
-          <View style={s.appInfo}><Text style={s.appName}>{a.name}</Text><Text style={s.appTime}>{a.used}min{a.limit ? ` / limit ${a.limit}min` : ''}</Text></View>
-          {a.limit ? <View style={[s.toggle, s.toggleOn]}><View style={[s.toggleThumb, s.toggleThumbOn]}/></View>
-            : <View style={s.unlimit}><Text style={s.unlimitText}>No limit</Text></View>}
+      {appEntries.map(([key, a]) => (
+        <View key={key} style={s.appRow}>
+          <View style={[s.appIcon, { backgroundColor: a.color }]}><Text style={[s.appIconText, { color: a.tc }]}>{a.code}</Text></View>
+          <View style={s.appInfo}>
+            <Text style={s.appName}>{a.name}</Text>
+            <Text style={s.appTime}>{a.used}min{a.limit ? ` / limit ${a.limit}min` : ''}</Text>
+          </View>
+          {a.limit ? (
+            <TouchableOpacity style={[s.toggle, s.toggleOn]} onPress={() => handleToggleLimit(key, a)}>
+              <View style={[s.toggleThumb, s.toggleThumbOn]} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={s.unlimit} onPress={() => handleToggleLimit(key, a)}>
+              <Text style={s.unlimitText}>No limit</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ))}
-      <Text style={[s.section, {marginTop:20}]}>Schedule</Text>
+      <Text style={[s.section, { marginTop: 20 }]}>Schedule</Text>
       <View style={s.card}>
         <View style={s.schedRow}><Text style={s.schedName}>Sleep time</Text><Text style={s.schedTime}>22:00 - 07:00</Text></View>
-        <View style={[s.schedRow, {borderBottomWidth:0}]}><Text style={s.schedName}>Study time</Text><Text style={s.schedTime}>16:00 - 18:00</Text></View>
+        <View style={[s.schedRow, { borderBottomWidth: 0 }]}><Text style={s.schedName}>Study time</Text><Text style={s.schedTime}>16:00 - 18:00</Text></View>
       </View>
     </ScrollView>
   );
