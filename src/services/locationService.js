@@ -1,30 +1,36 @@
 import * as Location from 'expo-location';
-import * as TaskManager from 'expo-task-manager';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../constants/firebase';
+import Constants from 'expo-constants';
 
 const LOCATION_TASK = 'background-location-task';
 
+// Expo Go 여부 판별
+const isExpoGo = Constants.appOwnership === 'expo';
+
 // ============================================
-// 1) 백그라운드 위치 태스크 (앱이 꺼져도 동작)
+// 1) 백그라운드 위치 태스크 (Development Build 전용)
 // ============================================
-TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
-  if (error) {
-    console.error('Background location error:', error);
-    return;
-  }
-  if (data) {
-    const { locations } = data;
-    const location = locations[0];
-    if (location && auth.currentUser) {
-      try {
-        await saveLocation(location);
-      } catch (e) {
-        console.error('Failed to save location:', e);
+if (!isExpoGo) {
+  const TaskManager = require('expo-task-manager');
+  TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
+    if (error) {
+      console.error('Background location error:', error);
+      return;
+    }
+    if (data) {
+      const { locations } = data;
+      const location = locations[0];
+      if (location && auth.currentUser) {
+        try {
+          await saveLocation(location);
+        } catch (e) {
+          console.error('Failed to save location:', e);
+        }
       }
     }
-  }
-});
+  });
+}
 
 // ============================================
 // 2) Firestore에 위치 저장하는 함수
@@ -51,6 +57,9 @@ async function saveLocation(location) {
   console.log('Location saved:', location.coords.latitude, location.coords.longitude);
 }
 
+// 포그라운드 위치 감시 구독 (Expo Go용)
+let foregroundSubscription = null;
+
 // ============================================
 // 3) 위치 권한 요청 + 추적 시작
 // ============================================
@@ -61,6 +70,7 @@ export async function startLocationTracking() {
     return 'denied';
   }
 
+  // 현재 위치 즉시 저장
   try {
     const current = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.High,
@@ -70,12 +80,56 @@ export async function startLocationTracking() {
     console.log('현재 위치 가져오기 실패:', e);
   }
 
-  const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
-  if (bgStatus !== 'granted') {
-    console.log('백그라운드 위치 권한 거부됨');
+  // Expo Go: 포그라운드 watchPosition 사용
+  if (isExpoGo) {
+    console.log('[Expo Go] 포그라운드 위치 감시 모드');
+    if (!foregroundSubscription) {
+      foregroundSubscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 30000,
+          distanceInterval: 30,
+        },
+        async (location) => {
+          if (auth.currentUser) {
+            try {
+              await saveLocation(location);
+            } catch (e) {
+              console.error('Failed to save watched location:', e);
+            }
+          }
+        }
+      );
+    }
     return 'foreground-only';
   }
 
+  // Development Build: 백그라운드 추적
+  const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+  if (bgStatus !== 'granted') {
+    console.log('백그라운드 위치 권한 거부됨 → 포그라운드 폴백');
+    if (!foregroundSubscription) {
+      foregroundSubscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 30000,
+          distanceInterval: 30,
+        },
+        async (location) => {
+          if (auth.currentUser) {
+            try {
+              await saveLocation(location);
+            } catch (e) {
+              console.error('Failed to save watched location:', e);
+            }
+          }
+        }
+      );
+    }
+    return 'foreground-only';
+  }
+
+  const TaskManager = require('expo-task-manager');
   const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK);
   if (!isRegistered) {
     await Location.startLocationUpdatesAsync(LOCATION_TASK, {
@@ -98,8 +152,18 @@ export async function startLocationTracking() {
 // 4) 위치 추적 중지
 // ============================================
 export async function stopLocationTracking() {
-  const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK);
-  if (isRegistered) {
-    await Location.stopLocationUpdatesAsync(LOCATION_TASK);
+  // 포그라운드 구독 해제
+  if (foregroundSubscription) {
+    foregroundSubscription.remove();
+    foregroundSubscription = null;
+  }
+
+  // 백그라운드 태스크 해제 (Development Build만)
+  if (!isExpoGo) {
+    const TaskManager = require('expo-task-manager');
+    const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK);
+    if (isRegistered) {
+      await Location.stopLocationUpdatesAsync(LOCATION_TASK);
+    }
   }
 }
