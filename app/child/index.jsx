@@ -32,6 +32,8 @@ export default function ChildHome() {
   const [modalVisible, setModalVisible] = useState(false);
   const [reason, setReason]     = useState('');
   const [extraMin, setExtraMin] = useState(30);
+  const [customMin, setCustomMin] = useState('');
+  const [isCustom, setIsCustom] = useState(false);
   const [sending, setSending]   = useState(false);
   const [lastRequest, setLastRequest] = useState(null); // 가장 최근 요청 상태
 
@@ -86,21 +88,26 @@ export default function ChildHome() {
     setTrackingMode(mode);
   }
 
+  const finalExtraMin = isCustom ? (parseInt(customMin, 10) || 0) : extraMin;
+  const isValidTime = finalExtraMin > 0 && finalExtraMin <= 480;
+
   async function handleSendRequest() {
-    if (!familyId || !user || !reason.trim()) return;
+    if (!familyId || !user || !reason.trim() || !isValidTime) return;
     setSending(true);
     try {
       await addDoc(collection(db, 'families', familyId, 'timeRequests'), {
         childUid: user.uid,
         childName: user.displayName || user.email?.split('@')[0] || '자녀',
         reason: reason.trim(),
-        extraMinutes: extraMin,
+        extraMinutes: finalExtraMin,
         status: 'pending',
         createdAt: serverTimestamp(),
       });
       setModalVisible(false);
       setReason('');
       setExtraMin(30);
+      setCustomMin('');
+      setIsCustom(false);
     } catch (e) {
       console.error('요청 전송 실패:', e);
     } finally {
@@ -238,15 +245,35 @@ export default function ChildHome() {
               {EXTRA_OPTIONS.map((min) => (
                 <TouchableOpacity
                   key={min}
-                  style={[s.optionBtn, extraMin === min && s.optionBtnActive]}
-                  onPress={() => setExtraMin(min)}
+                  style={[s.optionBtn, !isCustom && extraMin === min && s.optionBtnActive]}
+                  onPress={() => { setExtraMin(min); setIsCustom(false); }}
                 >
-                  <Text style={[s.optionText, extraMin === min && s.optionTextActive]}>
+                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]}>
                     {min}분
                   </Text>
                 </TouchableOpacity>
               ))}
+              <TouchableOpacity
+                style={[s.optionBtn, isCustom && s.optionBtnActive]}
+                onPress={() => setIsCustom(true)}
+              >
+                <Text style={[s.optionText, isCustom && s.optionTextActive]}>기타</Text>
+              </TouchableOpacity>
             </View>
+            {isCustom && (
+              <View style={s.customRow}>
+                <TextInput
+                  style={s.customInput}
+                  placeholder="분 입력"
+                  placeholderTextColor={Colors.textHint}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  value={customMin}
+                  onChangeText={setCustomMin}
+                />
+                <Text style={s.customUnit}>분</Text>
+              </View>
+            )}
 
             {/* 이유 입력 */}
             <Text style={s.modalLabel}>이유를 알려주세요</Text>
@@ -262,13 +289,13 @@ export default function ChildHome() {
 
             {/* 버튼 */}
             <View style={s.modalBtns}>
-              <TouchableOpacity style={s.cancelBtn} onPress={() => { setModalVisible(false); setReason(''); setExtraMin(30); }}>
+              <TouchableOpacity style={s.cancelBtn} onPress={() => { setModalVisible(false); setReason(''); setExtraMin(30); setCustomMin(''); setIsCustom(false); }}>
                 <Text style={s.cancelBtnText}>취소</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.submitBtn, (!reason.trim() || sending) && s.submitBtnDisabled]}
+                style={[s.submitBtn, (!reason.trim() || sending || !isValidTime) && s.submitBtnDisabled]}
                 onPress={handleSendRequest}
-                disabled={!reason.trim() || sending}
+                disabled={!reason.trim() || sending || !isValidTime}
               >
                 <Text style={s.submitBtnText}>{sending ? '전송 중...' : '요청 보내기'}</Text>
               </TouchableOpacity>
@@ -340,6 +367,10 @@ const s = StyleSheet.create({
   optionBtnActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
   optionText:      { fontSize: 14, color: Colors.textSecondary },
   optionTextActive:{ color: Colors.primary, fontWeight: '600' },
+
+  customRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 8 },
+  customInput: { flex: 1, backgroundColor: Colors.bg, borderRadius: 10, padding: 12, fontSize: 16, color: Colors.textPrimary, borderWidth: 1.5, borderColor: Colors.primary, textAlign: 'center' },
+  customUnit:  { fontSize: 15, color: Colors.textSecondary },
 
   textarea:    { backgroundColor: Colors.bg, borderRadius: 10, padding: 12, fontSize: 14, color: Colors.textPrimary, minHeight: 80, textAlignVertical: 'top', marginBottom: 20 },
 
