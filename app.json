@@ -9,6 +9,11 @@
     "plugins": ["expo-router", "expo-dev-client", "./modules/expo-usage-stats"],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5266290a-3a64-4881-af30-52167f38801a"
+      }
     }
   }
 }
