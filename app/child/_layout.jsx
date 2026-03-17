@@ -1,7 +1,10 @@
+import { useEffect } from 'react';
 import { Tabs } from 'expo-router';
 import { View, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/Colors';
+import { useAuth } from '../../contexts/AuthContext';
+import { registerPushToken } from '../../src/services/notificationService';
 
 function TabIcon({ label, focused }) {
   return (
@@ -16,6 +19,14 @@ function TabIcon({ label, focused }) {
 export default function ChildLayout() {
   const insets = useSafeAreaInsets();
   const bottomPadding = Math.max(insets.bottom, 8);
+  const { user } = useAuth();
+
+  // 로그인 시 푸시 토큰 등록 (SOS 수신용은 부모지만, 아이도 향후 알림 수신 위해 등록)
+  useEffect(() => {
+    if (user?.uid) {
+      registerPushToken(user.uid);
+    }
+  }, [user?.uid]);
 
   return (
     <Tabs screenOptions={{
