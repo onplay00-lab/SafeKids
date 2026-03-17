@@ -9,29 +9,71 @@ import { Colors } from '../../constants/Colors';
 
 function generateCode() { return Math.random().toString(36).substring(2,8).toUpperCase(); }
 
+const NOTIF_ITEMS = [
+  { key: 'geofence',    label: '지오펜스 알림',  desc: '자녀 안전 구역 진입/이탈' },
+  { key: 'sos',         label: 'SOS 알림',       desc: '자녀 긴급 신호' },
+  { key: 'timeRequest', label: '시간 요청 알림', desc: '자녀의 추가 시간 요청' },
+];
+
+const DEFAULT_NOTIF = { geofence: true, sos: true, timeRequest: true };
+
 export default function ParentSettings() {
   const router = useRouter();
   const { user, familyId, setFamilyId } = useAuth();
   const [inviteCode, setInviteCode] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [notifSettings, setNotifSettings] = useState(DEFAULT_NOTIF);
+  const [notifLoading, setNotifLoading] = useState(false);
+
+  // 알림 설정 로드
+  useEffect(() => {
+    if (!user?.uid) return;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (snap.exists() && snap.data().notificationSettings) {
+          setNotifSettings({ ...DEFAULT_NOTIF, ...snap.data().notificationSettings });
+        }
+      } catch (e) {
+        console.error('알림 설정 로드 실패:', e);
+      }
+    })();
+  }, [user?.uid]);
+
+  async function handleToggleNotif(key) {
+    if (notifLoading) return;
+    const newSettings = { ...notifSettings, [key]: !notifSettings[key] };
+    setNotifSettings(newSettings);
+    setNotifLoading(true);
+    try {
+      await setDoc(
+        doc(db, 'users', user.uid),
+        { notificationSettings: newSettings },
+        { merge: true }
+      );
+    } catch (e) {
+      console.error('알림 설정 저장 실패:', e);
+      // 실패 시 되돌리기
+      setNotifSettings(notifSettings);
+    } finally {
+      setNotifLoading(false);
+    }
+  }
 
   async function handleShowInviteCode() {
     if (!user) return;
     setLoading(true);
     try {
       if (familyId) {
-        // 기존 family의 코드 가져오기
         const famDoc = await getDoc(doc(db, 'families', familyId));
         if (famDoc.exists() && famDoc.data().inviteCode) {
           setInviteCode(famDoc.data().inviteCode);
         } else {
-          // 코드가 없으면 새로 생성
           const code = generateCode();
           await updateDoc(doc(db, 'families', familyId), { inviteCode: code });
           setInviteCode(code);
         }
       } else {
-        // family가 없으면 새로 생성
         const code = generateCode();
         const newFamilyId = user.uid;
         await setDoc(doc(db, 'families', newFamilyId), {
@@ -85,11 +127,27 @@ export default function ParentSettings() {
         <Text style={s.promise}>Education apps are unlimited</Text>
       </View>
 
-      <Text style={[s.section, {marginTop:24}]}>Notifications</Text>
+      <Text style={[s.section, {marginTop:24}]}>알림 설정</Text>
       <View style={s.card}>
-        {['Geofence alerts', 'Time limit alerts', 'Weekly report'].map(t => (
-          <View key={t} style={s.settingRow}><Text style={s.settingName}>{t}</Text><View style={[s.toggle, s.toggleOn]}><View style={[s.toggleThumb, s.toggleThumbOn]}/></View></View>
-        ))}
+        {NOTIF_ITEMS.map(({ key, label, desc }, i) => {
+          const isOn = notifSettings[key];
+          return (
+            <TouchableOpacity
+              key={key}
+              style={[s.settingRow, i < NOTIF_ITEMS.length - 1 && s.settingRowBorder]}
+              onPress={() => handleToggleNotif(key)}
+              activeOpacity={0.7}
+            >
+              <View style={s.settingInfo}>
+                <Text style={s.settingName}>{label}</Text>
+                <Text style={s.settingDesc}>{desc}</Text>
+              </View>
+              <View style={[s.toggle, isOn && s.toggleOn]}>
+                <View style={[s.toggleThumb, isOn && s.toggleThumbOn]} />
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
@@ -98,30 +156,34 @@ export default function ParentSettings() {
     </ScrollView>
   );
 }
+
 const s = StyleSheet.create({
-  container:{flex:1, backgroundColor:Colors.white},
-  content:{padding:20, paddingTop:60, paddingBottom:40},
-  title:{fontSize:22, fontWeight:'700', color:Colors.textPrimary, marginBottom:20},
-  profile:{alignItems:'center', marginBottom:24},
-  profileAvatar:{width:56, height:56, borderRadius:28, backgroundColor:Colors.primaryLight, alignItems:'center', justifyContent:'center', marginBottom:8},
-  profileAvatarText:{fontSize:20, fontWeight:'600', color:Colors.primary},
-  profileName:{fontSize:16, fontWeight:'600', color:Colors.textPrimary},
-  profileEmail:{fontSize:13, color:Colors.textSecondary, marginTop:2},
-  section:{fontSize:15, fontWeight:'600', color:Colors.textPrimary, marginBottom:10},
-  addBtn:{alignItems:'center', paddingVertical:14, borderWidth:1, borderColor:Colors.primaryMid, borderRadius:10, backgroundColor:Colors.primaryLight},
-  addBtnText:{fontSize:14, fontWeight:'500', color:Colors.primary},
-  codeBox:{alignItems:'center', backgroundColor:Colors.primaryLight, borderRadius:14, padding:24},
-  codeLabel:{fontSize:13, color:Colors.textSecondary, marginBottom:8},
-  codeText:{fontSize:36, fontWeight:'700', color:Colors.primary, letterSpacing:6, marginBottom:8},
-  codeHint:{fontSize:12, color:Colors.textHint},
-  card:{backgroundColor:Colors.bg, borderRadius:12, padding:14},
-  promise:{fontSize:13, color:Colors.textPrimary, paddingVertical:4},
-  settingRow:{flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingVertical:10, borderBottomWidth:0.5, borderBottomColor:Colors.border},
-  settingName:{fontSize:13, color:Colors.textPrimary},
-  toggle:{width:36, height:20, borderRadius:10, backgroundColor:Colors.borderMid, padding:2},
-  toggleOn:{backgroundColor:Colors.primary},
-  toggleThumb:{width:16, height:16, borderRadius:8, backgroundColor:Colors.white},
-  toggleThumbOn:{transform:[{translateX:16}]},
-  logoutBtn:{alignItems:'center', paddingVertical:14, marginTop:32, borderWidth:1, borderColor:Colors.border, borderRadius:10},
-  logoutText:{fontSize:14, color:Colors.danger},
+  container:        { flex: 1, backgroundColor: Colors.white },
+  content:          { padding: 20, paddingTop: 60, paddingBottom: 40 },
+  title:            { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginBottom: 20 },
+  profile:          { alignItems: 'center', marginBottom: 24 },
+  profileAvatar:    { width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  profileAvatarText:{ fontSize: 20, fontWeight: '600', color: Colors.primary },
+  profileName:      { fontSize: 16, fontWeight: '600', color: Colors.textPrimary },
+  profileEmail:     { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
+  section:          { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 10 },
+  addBtn:           { alignItems: 'center', paddingVertical: 14, borderWidth: 1, borderColor: Colors.primaryMid, borderRadius: 10, backgroundColor: Colors.primaryLight },
+  addBtnText:       { fontSize: 14, fontWeight: '500', color: Colors.primary },
+  codeBox:          { alignItems: 'center', backgroundColor: Colors.primaryLight, borderRadius: 14, padding: 24 },
+  codeLabel:        { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
+  codeText:         { fontSize: 36, fontWeight: '700', color: Colors.primary, letterSpacing: 6, marginBottom: 8 },
+  codeHint:         { fontSize: 12, color: Colors.textHint },
+  card:             { backgroundColor: Colors.bg, borderRadius: 12, padding: 14 },
+  promise:          { fontSize: 13, color: Colors.textPrimary, paddingVertical: 4 },
+  settingRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
+  settingRowBorder: { borderBottomWidth: 0.5, borderBottomColor: Colors.border },
+  settingInfo:      { flex: 1, marginRight: 12 },
+  settingName:      { fontSize: 14, fontWeight: '500', color: Colors.textPrimary },
+  settingDesc:      { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  toggle:           { width: 44, height: 24, borderRadius: 12, backgroundColor: Colors.borderMid, padding: 2 },
+  toggleOn:         { backgroundColor: Colors.primary },
+  toggleThumb:      { width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.white },
+  toggleThumbOn:    { transform: [{ translateX: 20 }] },
+  logoutBtn:        { alignItems: 'center', paddingVertical: 14, marginTop: 32, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
+  logoutText:       { fontSize: 14, color: Colors.danger },
 });
