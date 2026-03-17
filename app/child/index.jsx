@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Colors } from '../../constants/Colors';
 import { startLocationTracking } from '../../src/services/locationService';
 import {
   initScreentime, startUsageTracking, stopUsageTracking,
-  subscribeMyScreentime, setActiveApp, DEFAULT_APPS,
+  subscribeMyScreentime, checkUsagePermission, requestUsagePermission,
 } from '../../src/services/screentimeService';
 
 function fmt(m) {
@@ -13,54 +13,56 @@ function fmt(m) {
   return h > 0 ? `${h}h ${mm}m` : `${mm}m`;
 }
 
-function fmtSec(sec) {
-  if (!sec) return '0m';
-  const m = Math.floor(sec / 60);
-  return fmt(m);
-}
-
-const APP_KEYS = Object.keys(DEFAULT_APPS);
-
 export default function ChildHome() {
-  const [locStatus, setLocStatus] = useState('위치 확인 중...');
-  const [screenData, setScreenData] = useState(null);
-  const [activeApp, setActiveAppState] = useState(null); // 현재 사용 중인 앱
+  const [locStatus, setLocStatus]     = useState('위치 확인 중...');
+  const [screenData, setScreenData]   = useState(null);
+  const [needPermission, setNeedPermission] = useState(false);
+  const [trackingMode, setTrackingMode] = useState(null); // 'native' | 'fallback'
 
-  // 위치 추적 시작
+  // 위치 추적
   useEffect(() => {
-    async function initLocation() {
-      try {
-        const result = await startLocationTracking();
-        if (result === 'active') {
-          setLocStatus('📍 위치 추적 활성화됨');
-        } else if (result === 'foreground-only') {
-          setLocStatus('📍 앱 사용 중에만 위치 확인');
-        } else {
-          setLocStatus('⚠️ 위치 권한이 필요합니다');
-        }
-      } catch (e) {
-        setLocStatus('⚠️ 위치 서비스 오류');
-      }
-    }
-    initLocation();
+    startLocationTracking()
+      .then((r) => {
+        if (r === 'active')           setLocStatus('📍 위치 추적 활성화됨');
+        else if (r === 'foreground-only') setLocStatus('📍 앱 사용 중에만 위치 확인');
+        else                          setLocStatus('⚠️ 위치 권한이 필요합니다');
+      })
+      .catch(() => setLocStatus('⚠️ 위치 서비스 오류'));
   }, []);
 
   // 스크린타임 초기화 + 추적
   useEffect(() => {
     let unsubscribe = () => {};
+
     async function init() {
       await initScreentime();
-      await startUsageTracking();
+
+      // Android: 권한 먼저 확인
+      if (Platform.OS === 'android') {
+        const hasPerm = await checkUsagePermission();
+        if (!hasPerm) {
+          setNeedPermission(true);
+        }
+      }
+
+      const mode = await startUsageTracking();
+      setTrackingMode(mode);
       unsubscribe = subscribeMyScreentime((data) => setScreenData(data));
     }
+
     init();
     return () => { stopUsageTracking(); unsubscribe(); };
   }, []);
 
-  async function handleSelectApp(key) {
-    const next = activeApp === key ? null : key;
-    setActiveAppState(next);
-    await setActiveApp(next);
+  async function handleGrantPermission() {
+    await requestUsagePermission();
+    // 설정 화면에서 돌아올 때 AppState active 이벤트로 재확인
+    // (Android는 설정 복귀 시 앱이 resume됨 → useEffect 재실행 불필요)
+    setNeedPermission(false);
+    // 추적 재시작
+    await stopUsageTracking();
+    const mode = await startUsageTracking();
+    setTrackingMode(mode);
   }
 
   const dailyUsage  = screenData?.dailyUsage  || 0;
@@ -78,6 +80,28 @@ export default function ChildHome() {
         <Text style={s.locText}>{locStatus}</Text>
       </View>
 
+      {/* 권한 안내 배너 */}
+      {needPermission && Platform.OS === 'android' && (
+        <View style={s.permBanner}>
+          <Text style={s.permTitle}>📊 앱 사용 시간 권한이 필요해요</Text>
+          <Text style={s.permDesc}>
+            실제 앱별 사용 시간을 측정하려면{'\n'}기기 설정에서 권한을 허용해 주세요.
+          </Text>
+          <TouchableOpacity style={s.permBtn} onPress={handleGrantPermission}>
+            <Text style={s.permBtnText}>설정에서 허용하기</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 측정 방식 뱃지 */}
+      {trackingMode && (
+        <View style={[s.modeBadge, trackingMode === 'native' ? s.modeNative : s.modeFallback]}>
+          <Text style={s.modeText}>
+            {trackingMode === 'native' ? '✅ 실제 앱 사용량 측정 중' : '⏱ SafeKids 앱 사용시간만 측정'}
+          </Text>
+        </View>
+      )}
+
       {/* 남은 시간 링 */}
       <View style={s.timerArea}>
         <View style={[s.timerRing, { borderColor: remaining > 0 ? Colors.primaryLight : '#FCEBEB' }]}>
@@ -87,72 +111,38 @@ export default function ChildHome() {
         <Text style={s.timerSub}>오늘 {fmt(dailyUsage)} 사용 / 제한 {fmt(dailyLimit)}</Text>
       </View>
 
-      {/* 지금 뭐 하고 있어? */}
-      <View style={s.card}>
-        <Text style={s.cardTitle}>지금 뭐 해?</Text>
-        <Text style={s.cardSub}>사용 중인 앱을 선택하면 정확하게 측정돼요</Text>
-        <View style={s.appBtns}>
-          {APP_KEYS.map((key) => {
-            const app = DEFAULT_APPS[key];
-            const selected = activeApp === key;
+      {/* 앱별 사용시간 */}
+      {appEntries.length > 0 && (
+        <View style={s.card}>
+          <Text style={s.cardTitle}>앱별 사용시간</Text>
+          {appEntries.map(([key, app], i) => {
+            const usedSec = app.usedSeconds || app.used * 60 || 0;
+            const usedMin = Math.floor(usedSec / 60);
+            const pct  = app.limit ? Math.min(100, Math.round((usedMin / app.limit) * 100)) : 0;
+            const warn = app.limit && pct > 80;
             return (
-              <TouchableOpacity
-                key={key}
-                style={[s.appBtn, selected && { backgroundColor: app.tc, borderColor: app.tc }]}
-                onPress={() => handleSelectApp(key)}
-              >
-                <Text style={[s.appBtnText, selected && { color: '#fff' }]}>{app.name}</Text>
-              </TouchableOpacity>
+              <View key={key} style={i > 0 ? { marginTop: 12 } : undefined}>
+                <View style={s.appRow}>
+                  <View style={s.appRowLeft}>
+                    <View style={[s.appDot, { backgroundColor: app.tc || Colors.primary }]} />
+                    <Text style={s.appLabel}>{app.name}</Text>
+                  </View>
+                  <Text style={[s.appVal, warn && { color: '#BA7517' }]}>
+                    {fmt(usedMin)}{app.limit ? ` / ${fmt(app.limit)}` : ''}
+                  </Text>
+                </View>
+                {app.limit ? (
+                  <View style={s.bar}>
+                    <View style={[s.barFill, { width: `${pct}%`, backgroundColor: warn ? '#BA7517' : Colors.primary }]} />
+                  </View>
+                ) : (
+                  <Text style={s.noLimit}>제한 없음</Text>
+                )}
+              </View>
             );
           })}
-          <TouchableOpacity
-            style={[s.appBtn, activeApp === null && { backgroundColor: Colors.borderMid }]}
-            onPress={() => handleSelectApp(null)}
-          >
-            <Text style={s.appBtnText}>없음</Text>
-          </TouchableOpacity>
         </View>
-        {activeApp && apps[activeApp] && (
-          <View style={s.nowRow}>
-            <View style={[s.dot, { backgroundColor: DEFAULT_APPS[activeApp]?.tc || Colors.primary }]} />
-            <Text style={s.nowText}>
-              {DEFAULT_APPS[activeApp]?.name} 사용 중 · 오늘{' '}
-              {fmtSec(apps[activeApp].usedSeconds || apps[activeApp].used * 60)}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* 앱별 사용시간 */}
-      <View style={s.card}>
-        <Text style={s.cardTitle}>앱별 사용시간</Text>
-        {appEntries.map(([key, app], i) => {
-          const usedSec = app.usedSeconds || app.used * 60 || 0;
-          const usedMin = Math.floor(usedSec / 60);
-          const pct = app.limit ? Math.min(100, Math.round((usedMin / app.limit) * 100)) : 0;
-          const warn = app.limit && pct > 80;
-          return (
-            <View key={key} style={i > 0 ? { marginTop: 12 } : undefined}>
-              <View style={s.appRow}>
-                <View style={s.appRowLeft}>
-                  <View style={[s.appDot, { backgroundColor: app.tc || Colors.primary }]} />
-                  <Text style={s.appLabel}>{app.name}</Text>
-                </View>
-                <Text style={[s.appVal, warn && { color: '#BA7517' }]}>
-                  {fmt(usedMin)}{app.limit ? ` / ${fmt(app.limit)}` : ''}
-                </Text>
-              </View>
-              {app.limit ? (
-                <View style={s.bar}>
-                  <View style={[s.barFill, { width: `${pct}%`, backgroundColor: warn ? '#BA7517' : Colors.primary }]} />
-                </View>
-              ) : (
-                <Text style={s.noLimit}>제한 없음</Text>
-              )}
-            </View>
-          );
-        })}
-      </View>
+      )}
 
       {/* 추가 시간 요청 */}
       <View style={s.bonusCard}>
@@ -167,36 +157,43 @@ export default function ChildHome() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.white },
-  content: { padding: 20, paddingTop: 60, paddingBottom: 40 },
-  title: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16 },
-  locBar: { backgroundColor: '#E8F5E9', borderRadius: 8, padding: 10, marginBottom: 16, alignItems: 'center' },
-  locText: { fontSize: 13, color: '#2E7D32' },
-  timerArea: { alignItems: 'center', marginBottom: 20 },
-  timerRing: { width: 140, height: 140, borderRadius: 70, borderWidth: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  timerVal: { fontSize: 24, fontWeight: '700', color: Colors.textPrimary },
-  timerLabel: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  timerSub: { fontSize: 13, color: Colors.textSecondary },
-  card: { backgroundColor: Colors.bg, borderRadius: 12, padding: 14, marginBottom: 12 },
-  cardTitle: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, marginBottom: 4 },
-  cardSub: { fontSize: 12, color: Colors.textSecondary, marginBottom: 12 },
-  appBtns: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  appBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white },
-  appBtnText: { fontSize: 13, color: Colors.textSecondary },
-  nowRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTopWidth: 0.5, borderTopColor: Colors.border },
-  dot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  nowText: { fontSize: 13, color: Colors.textPrimary },
-  appRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  appRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  appDot: { width: 8, height: 8, borderRadius: 4 },
-  appLabel: { fontSize: 13, color: Colors.textSecondary },
-  appVal: { fontSize: 13, color: Colors.textPrimary },
-  bar: { height: 4, backgroundColor: Colors.border, borderRadius: 2, marginTop: 6 },
-  barFill: { height: 4, borderRadius: 2 },
-  noLimit: { fontSize: 11, color: Colors.textHint, marginTop: 4 },
-  bonusCard: { backgroundColor: Colors.bg, borderRadius: 12, padding: 16 },
-  bonusTitle: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 4 },
-  bonusDesc: { fontSize: 13, color: Colors.textSecondary, marginBottom: 12 },
-  bonusBtn: { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  container:   { flex: 1, backgroundColor: Colors.white },
+  content:     { padding: 20, paddingTop: 60, paddingBottom: 40 },
+  title:       { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16 },
+  locBar:      { backgroundColor: '#E8F5E9', borderRadius: 8, padding: 10, marginBottom: 12, alignItems: 'center' },
+  locText:     { fontSize: 13, color: '#2E7D32' },
+
+  permBanner:  { backgroundColor: '#FFF8E1', borderRadius: 12, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#FFD54F' },
+  permTitle:   { fontSize: 14, fontWeight: '600', color: '#5D4037', marginBottom: 6 },
+  permDesc:    { fontSize: 13, color: '#6D4C41', marginBottom: 12, lineHeight: 20 },
+  permBtn:     { backgroundColor: '#F57C00', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  permBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+
+  modeBadge:   { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12, marginBottom: 12, alignSelf: 'flex-start' },
+  modeNative:  { backgroundColor: '#E8F5E9' },
+  modeFallback:{ backgroundColor: '#FFF3E0' },
+  modeText:    { fontSize: 12, color: Colors.textSecondary },
+
+  timerArea:   { alignItems: 'center', marginBottom: 20 },
+  timerRing:   { width: 140, height: 140, borderRadius: 70, borderWidth: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  timerVal:    { fontSize: 24, fontWeight: '700', color: Colors.textPrimary },
+  timerLabel:  { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  timerSub:    { fontSize: 13, color: Colors.textSecondary },
+
+  card:        { backgroundColor: Colors.bg, borderRadius: 12, padding: 14, marginBottom: 12 },
+  cardTitle:   { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, marginBottom: 12 },
+  appRow:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  appRowLeft:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  appDot:      { width: 8, height: 8, borderRadius: 4 },
+  appLabel:    { fontSize: 13, color: Colors.textSecondary },
+  appVal:      { fontSize: 13, color: Colors.textPrimary },
+  bar:         { height: 4, backgroundColor: Colors.border, borderRadius: 2, marginTop: 6 },
+  barFill:     { height: 4, borderRadius: 2 },
+  noLimit:     { fontSize: 11, color: Colors.textHint, marginTop: 4 },
+
+  bonusCard:    { backgroundColor: Colors.bg, borderRadius: 12, padding: 16 },
+  bonusTitle:   { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 4 },
+  bonusDesc:    { fontSize: 13, color: Colors.textSecondary, marginBottom: 12 },
+  bonusBtn:     { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   bonusBtnText: { fontSize: 14, fontWeight: '500', color: Colors.primary },
 });
