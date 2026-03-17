@@ -2,6 +2,7 @@ import * as Location from 'expo-location';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../constants/firebase';
 import Constants from 'expo-constants';
+import { checkGeofences } from './geofenceService';
 
 const LOCATION_TASK = 'background-location-task';
 
@@ -55,6 +56,13 @@ async function saveLocation(location) {
   }, { merge: true });
 
   console.log('Location saved:', location.coords.latitude, location.coords.longitude);
+
+  // 지오펜스 진입/이탈 체크
+  try {
+    await checkGeofences(familyId, user.uid, location.coords.latitude, location.coords.longitude);
+  } catch (e) {
+    console.error('Geofence check failed:', e);
+  }
 }
 
 // 포그라운드 위치 감시 구독 (Expo Go용)
