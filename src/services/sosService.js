@@ -44,14 +44,17 @@ export async function sendSOS(familyId) {
     if (parentId) {
       const parentDoc = await getDoc(doc(db, 'users', parentId));
       if (parentDoc.exists()) {
-        const parentToken = parentDoc.data().pushToken;
-        const childName = (await getDoc(doc(db, 'users', user.uid))).data()?.name || '자녀';
-        await sendPushNotification({
-          token: parentToken,
-          title: '🚨 SOS 알림',
-          body: `${childName}이(가) 위험 신호를 보냈습니다!`,
-          data: { type: 'sos', sosId: sosDoc.id, familyId },
-        });
+        const parentData = parentDoc.data();
+        const sosEnabled = parentData.notificationSettings?.sos ?? true;
+        if (sosEnabled) {
+          const childName = (await getDoc(doc(db, 'users', user.uid))).data()?.name || '자녀';
+          await sendPushNotification({
+            token: parentData.pushToken,
+            title: '🚨 SOS 알림',
+            body: `${childName}이(가) 위험 신호를 보냈습니다!`,
+            data: { type: 'sos', sosId: sosDoc.id, familyId },
+          });
+        }
       }
     }
   }

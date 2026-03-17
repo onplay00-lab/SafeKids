@@ -117,7 +117,11 @@ export async function checkGeofences(familyId, childUid, latitude, longitude) {
 
     if (parentId) {
       const parentDoc = await getDoc(doc(db, 'users', parentId));
-      parentToken = parentDoc.exists() ? parentDoc.data().pushToken : null;
+      if (parentDoc.exists()) {
+        const parentData = parentDoc.data();
+        const geofenceEnabled = parentData.notificationSettings?.geofence ?? true;
+        if (geofenceEnabled) parentToken = parentData.pushToken || null;
+      }
     }
 
     const childDoc = await getDoc(doc(db, 'users', childUid));
