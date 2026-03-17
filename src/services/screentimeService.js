@@ -1,64 +1,116 @@
 import { AppState } from 'react-native';
-import { doc, getDoc, setDoc, onSnapshot, serverTimestamp, increment } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../constants/firebase';
 
 // ============================================
-// 기본 앱 목록 (초기화 시 사용)
+// 기본 앱 목록
 // ============================================
 const DEFAULT_APPS = {
-  youtube: { used: 0, limit: 60, name: 'YouTube', code: 'YT', color: '#FCEBEB', tc: '#791F1F' },
-  game:    { used: 0, limit: 60, name: 'Game (Roblox)', code: 'GE', color: '#FAEEDA', tc: '#633806' },
-  edu:     { used: 0, limit: null, name: 'EduApp', code: 'ED', color: '#EAF3DE', tc: '#27500A' },
+  youtube: { name: 'YouTube',      code: 'YT', color: '#FCEBEB', tc: '#791F1F', limit: 60 },
+  game:    { name: 'Game (Roblox)', code: 'GE', color: '#FAEEDA', tc: '#633806', limit: 60 },
+  edu:     { name: 'EduApp',        code: 'ED', color: '#EAF3DE', tc: '#27500A', limit: null },
 };
 
-const DEFAULT_DAILY_LIMIT = 240; // 4시간
+const DEFAULT_DAILY_LIMIT = 240; // 분
 
-let trackingInterval = null;
-let appStateSubscription = null;
+// ============================================
+// 내부 상태
+// ============================================
+let foregroundStartTime = null; // Date.now()
 let isAppActive = true;
+let currentAppKey = null;       // 아이가 선택한 현재 앱
+let flushInterval = null;
+let appStateSub = null;
 
 // ============================================
-// 오늘 날짜 문자열 (YYYY-MM-DD)
+// 날짜 문자열 (YYYY-MM-DD)
 // ============================================
-function getTodayString() {
+function todayStr() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-// ============================================
-// 현재 유저의 familyId 가져오기
-// ============================================
 async function getFamilyId() {
   const user = auth.currentUser;
   if (!user) return null;
-  const userDoc = await getDoc(doc(db, 'users', user.uid));
-  if (!userDoc.exists()) return null;
-  return userDoc.data().familyId || null;
+  const snap = await getDoc(doc(db, 'users', user.uid));
+  return snap.exists() ? (snap.data().familyId || null) : null;
 }
 
-// ============================================
-// 스크린타임 문서 레퍼런스
-// ============================================
-function getScreentimeRef(familyId, childUid) {
+function getRef(familyId, childUid) {
   return doc(db, 'families', familyId, 'screentime', childUid);
 }
 
 // ============================================
-// 1) 오늘 스크린타임 초기화 (아이 앱 시작 시)
+// 경과 시간 Firestore에 저장
+// ============================================
+async function flushElapsedTime() {
+  if (!foregroundStartTime) return;
+
+  const now = Date.now();
+  const elapsedSec = Math.floor((now - foregroundStartTime) / 1000);
+  foregroundStartTime = now; // 다음 flush 기준점 리셋
+
+  if (elapsedSec < 1) return;
+
+  const user = auth.currentUser;
+  if (!user) return;
+  const familyId = await getFamilyId();
+  if (!familyId) return;
+
+  const ref = getRef(familyId, user.uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+
+  const data = snap.data();
+  if (data.date !== todayStr()) {
+    // 날짜 변경 → 재초기화
+    await initScreentime();
+    foregroundStartTime = Date.now();
+    return;
+  }
+
+  const newSeconds = (data.dailyUsageSeconds || 0) + elapsedSec;
+
+  // 앱별 사용시간 업데이트
+  const apps = { ...(data.apps || {}) };
+  if (currentAppKey && apps[currentAppKey]) {
+    const prevAppSec = apps[currentAppKey].usedSeconds || 0;
+    const newAppSec = prevAppSec + elapsedSec;
+    apps[currentAppKey] = {
+      ...apps[currentAppKey],
+      usedSeconds: newAppSec,
+      used: Math.floor(newAppSec / 60),
+    };
+  }
+
+  try {
+    await setDoc(ref, {
+      dailyUsageSeconds: newSeconds,
+      dailyUsage: Math.floor(newSeconds / 60),
+      apps,
+      lastActiveAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (e) {
+    console.error('screentimeService: flush 실패', e);
+  }
+}
+
+// ============================================
+// 1) 오늘 스크린타임 초기화
 // ============================================
 export async function initScreentime() {
   const user = auth.currentUser;
   if (!user) return;
-
   const familyId = await getFamilyId();
   if (!familyId) return;
 
-  const ref = getScreentimeRef(familyId, user.uid);
+  const ref = getRef(familyId, user.uid);
   const snap = await getDoc(ref);
-  const today = getTodayString();
+  const today = todayStr();
 
   if (!snap.exists() || snap.data().date !== today) {
-    // 이전 제한시간 유지, 사용량만 리셋
     const prevData = snap.exists() ? snap.data() : {};
     const prevApps = prevData.apps || {};
 
@@ -67,12 +119,14 @@ export async function initScreentime() {
       apps[key] = {
         ...def,
         used: 0,
+        usedSeconds: 0,
         limit: prevApps[key]?.limit !== undefined ? prevApps[key].limit : def.limit,
       };
     }
 
     await setDoc(ref, {
       dailyUsage: 0,
+      dailyUsageSeconds: 0,
       dailyLimit: prevData.dailyLimit || DEFAULT_DAILY_LIMIT,
       date: today,
       apps,
@@ -83,124 +137,112 @@ export async function initScreentime() {
 }
 
 // ============================================
-// 2) 사용시간 추적 시작 (1분마다 기록)
+// 2) 사용시간 추적 시작
 // ============================================
 export async function startUsageTracking() {
-  if (trackingInterval) return;
+  if (flushInterval) return; // 이미 시작됨
 
-  // AppState 감지
-  appStateSubscription = AppState.addEventListener('change', (state) => {
-    isAppActive = state === 'active';
+  foregroundStartTime = Date.now();
+  isAppActive = true;
+
+  // AppState 변화 감지
+  appStateSub = AppState.addEventListener('change', async (nextState) => {
+    if (nextState === 'active') {
+      // 포그라운드 복귀
+      isAppActive = true;
+      foregroundStartTime = Date.now();
+    } else if (nextState === 'background' || nextState === 'inactive') {
+      // 백그라운드 전환 → 즉시 저장
+      await flushElapsedTime();
+      isAppActive = false;
+      foregroundStartTime = null;
+    }
   });
 
-  trackingInterval = setInterval(async () => {
-    if (!isAppActive) return;
-
-    const user = auth.currentUser;
-    if (!user) return;
-
-    const familyId = await getFamilyId();
-    if (!familyId) return;
-
-    const ref = getScreentimeRef(familyId, user.uid);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) return;
-
-    const data = snap.data();
-    if (data.date !== getTodayString()) return;
-
-    // 앱별 사용시간 시뮬레이션: 활성 앱 중 하나에 1분 추가
-    const apps = { ...data.apps };
-    const activeAppKeys = Object.keys(apps);
-    if (activeAppKeys.length > 0) {
-      const randomKey = activeAppKeys[Math.floor(Math.random() * activeAppKeys.length)];
-      apps[randomKey] = { ...apps[randomKey], used: (apps[randomKey].used || 0) + 1 };
+  // 30초마다 저장 (앱 강제 종료 시 최대 30초 손실)
+  flushInterval = setInterval(async () => {
+    if (isAppActive && foregroundStartTime) {
+      await flushElapsedTime();
     }
-
-    try {
-      await setDoc(ref, {
-        dailyUsage: (data.dailyUsage || 0) + 1,
-        apps,
-        lastActiveAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-    } catch (e) {
-      console.error('Failed to update screentime:', e);
-    }
-  }, 60000); // 1분마다
+  }, 30000);
 }
 
 // ============================================
 // 3) 사용시간 추적 중지
 // ============================================
-export function stopUsageTracking() {
-  if (trackingInterval) {
-    clearInterval(trackingInterval);
-    trackingInterval = null;
+export async function stopUsageTracking() {
+  // 남은 시간 즉시 저장
+  if (isAppActive && foregroundStartTime) {
+    await flushElapsedTime();
   }
-  if (appStateSubscription) {
-    appStateSubscription.remove();
-    appStateSubscription = null;
+
+  if (flushInterval) {
+    clearInterval(flushInterval);
+    flushInterval = null;
   }
+  if (appStateSub) {
+    appStateSub.remove();
+    appStateSub = null;
+  }
+  foregroundStartTime = null;
 }
 
 // ============================================
-// 4) 실시간 구독 - 부모용 (특정 아이)
+// 4) 현재 사용 앱 변경 (아이가 직접 선택)
+// ============================================
+export async function setActiveApp(appKey) {
+  // 이전 앱 시간 먼저 flush
+  if (isAppActive && foregroundStartTime) {
+    await flushElapsedTime();
+  }
+  currentAppKey = appKey || null;
+}
+
+// ============================================
+// 5) 실시간 구독 - 부모용
 // ============================================
 export function subscribeScreentime(familyId, childUid, callback) {
-  const ref = getScreentimeRef(familyId, childUid);
-  return onSnapshot(ref, (snap) => {
-    if (snap.exists()) {
-      callback(snap.data());
-    } else {
-      callback(null);
-    }
+  return onSnapshot(getRef(familyId, childUid), (snap) => {
+    callback(snap.exists() ? snap.data() : null);
   });
 }
 
 // ============================================
-// 5) 실시간 구독 - 아이용 (자기 자신)
+// 6) 실시간 구독 - 아이용
 // ============================================
 export function subscribeMyScreentime(callback) {
   const user = auth.currentUser;
   if (!user) return () => {};
 
   let unsubscribe = () => {};
-
   getFamilyId().then((familyId) => {
     if (!familyId) return;
-    const ref = getScreentimeRef(familyId, user.uid);
-    unsubscribe = onSnapshot(ref, (snap) => {
-      if (snap.exists()) {
-        callback(snap.data());
-      } else {
-        callback(null);
-      }
+    unsubscribe = onSnapshot(getRef(familyId, user.uid), (snap) => {
+      callback(snap.exists() ? snap.data() : null);
     });
   });
-
   return () => unsubscribe();
 }
 
 // ============================================
-// 6) 부모: 일일 제한시간 변경
+// 7) 부모: 일일 제한시간 변경
 // ============================================
 export async function updateDailyLimit(familyId, childUid, limit) {
-  const ref = getScreentimeRef(familyId, childUid);
-  await setDoc(ref, { dailyLimit: limit, updatedAt: serverTimestamp() }, { merge: true });
+  await setDoc(getRef(familyId, childUid), { dailyLimit: limit, updatedAt: serverTimestamp() }, { merge: true });
 }
 
 // ============================================
-// 7) 부모: 앱별 제한시간 변경
+// 8) 부모: 앱별 제한시간 변경
 // ============================================
 export async function updateAppLimit(familyId, childUid, appKey, limit) {
-  const ref = getScreentimeRef(familyId, childUid);
+  const ref = getRef(familyId, childUid);
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
-
   const apps = { ...snap.data().apps };
   if (apps[appKey]) {
     apps[appKey] = { ...apps[appKey], limit };
     await setDoc(ref, { apps, updatedAt: serverTimestamp() }, { merge: true });
   }
 }
+
+export { DEFAULT_APPS };
