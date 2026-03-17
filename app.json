@@ -7,6 +7,14 @@
     "scheme": "safekids",
     "platforms": ["ios", "android", "web"],
     "plugins": ["expo-router", "expo-dev-client", "./modules/expo-usage-stats", "expo-notifications"],
+    "android": {
+      "package": "com.onplay00lab.safekids",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
     "experiments": {
       "typedRoutes": true
     },
