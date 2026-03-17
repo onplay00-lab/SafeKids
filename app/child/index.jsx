@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  Platform, Modal, TextInput, KeyboardAvoidingView,
+} from 'react-native';
+import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
+import { useAuth } from '../../contexts/AuthContext';
 import { startLocationTracking } from '../../src/services/locationService';
 import {
   initScreentime, startUsageTracking, stopUsageTracking,
@@ -13,19 +19,29 @@ function fmt(m) {
   return h > 0 ? `${h}h ${mm}m` : `${mm}m`;
 }
 
+const EXTRA_OPTIONS = [15, 30, 60];
+
 export default function ChildHome() {
+  const { user, familyId } = useAuth();
   const [locStatus, setLocStatus]     = useState('위치 확인 중...');
   const [screenData, setScreenData]   = useState(null);
   const [needPermission, setNeedPermission] = useState(false);
-  const [trackingMode, setTrackingMode] = useState(null); // 'native' | 'fallback'
+  const [trackingMode, setTrackingMode] = useState(null);
+
+  // 추가 시간 요청 관련 상태
+  const [modalVisible, setModalVisible] = useState(false);
+  const [reason, setReason]     = useState('');
+  const [extraMin, setExtraMin] = useState(30);
+  const [sending, setSending]   = useState(false);
+  const [lastRequest, setLastRequest] = useState(null); // 가장 최근 요청 상태
 
   // 위치 추적
   useEffect(() => {
     startLocationTracking()
       .then((r) => {
-        if (r === 'active')           setLocStatus('📍 위치 추적 활성화됨');
+        if (r === 'active')               setLocStatus('📍 위치 추적 활성화됨');
         else if (r === 'foreground-only') setLocStatus('📍 앱 사용 중에만 위치 확인');
-        else                          setLocStatus('⚠️ 위치 권한이 필요합니다');
+        else                              setLocStatus('⚠️ 위치 권한이 필요합니다');
       })
       .catch(() => setLocStatus('⚠️ 위치 서비스 오류'));
   }, []);
@@ -33,43 +49,74 @@ export default function ChildHome() {
   // 스크린타임 초기화 + 추적
   useEffect(() => {
     let unsubscribe = () => {};
-
     async function init() {
       await initScreentime();
-
-      // Android: 권한 먼저 확인
       if (Platform.OS === 'android') {
         const hasPerm = await checkUsagePermission();
-        if (!hasPerm) {
-          setNeedPermission(true);
-        }
+        if (!hasPerm) setNeedPermission(true);
       }
-
       const mode = await startUsageTracking();
       setTrackingMode(mode);
       unsubscribe = subscribeMyScreentime((data) => setScreenData(data));
     }
-
     init();
     return () => { stopUsageTracking(); unsubscribe(); };
   }, []);
 
+  // 내 요청 상태 실시간 구독
+  useEffect(() => {
+    if (!familyId || !user) return;
+    const q = query(
+      collection(db, 'families', familyId, 'timeRequests'),
+      where('childUid', '==', user.uid),
+      orderBy('createdAt', 'desc'),
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      if (!snap.empty) setLastRequest({ id: snap.docs[0].id, ...snap.docs[0].data() });
+      else setLastRequest(null);
+    });
+    return () => unsub();
+  }, [familyId, user]);
+
   async function handleGrantPermission() {
     await requestUsagePermission();
-    // 설정 화면에서 돌아올 때 AppState active 이벤트로 재확인
-    // (Android는 설정 복귀 시 앱이 resume됨 → useEffect 재실행 불필요)
     setNeedPermission(false);
-    // 추적 재시작
     await stopUsageTracking();
     const mode = await startUsageTracking();
     setTrackingMode(mode);
   }
 
-  const dailyUsage  = screenData?.dailyUsage  || 0;
-  const dailyLimit  = screenData?.dailyLimit  || 240;
-  const remaining   = Math.max(0, dailyLimit - dailyUsage);
-  const apps        = screenData?.apps || {};
-  const appEntries  = Object.entries(apps);
+  async function handleSendRequest() {
+    if (!familyId || !user || !reason.trim()) return;
+    setSending(true);
+    try {
+      await addDoc(collection(db, 'families', familyId, 'timeRequests'), {
+        childUid: user.uid,
+        childName: user.displayName || user.email?.split('@')[0] || '자녀',
+        reason: reason.trim(),
+        extraMinutes: extraMin,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+      });
+      setModalVisible(false);
+      setReason('');
+      setExtraMin(30);
+    } catch (e) {
+      console.error('요청 전송 실패:', e);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const dailyUsage = screenData?.dailyUsage || 0;
+  const dailyLimit = screenData?.dailyLimit || 240;
+  const remaining  = Math.max(0, dailyLimit - dailyUsage);
+  const apps       = screenData?.apps || {};
+  const appEntries = Object.entries(apps);
+
+  const hasPending  = lastRequest?.status === 'pending';
+  const hasApproved = lastRequest?.status === 'approved';
+  const hasRejected = lastRequest?.status === 'rejected';
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
@@ -147,11 +194,88 @@ export default function ChildHome() {
       {/* 추가 시간 요청 */}
       <View style={s.bonusCard}>
         <Text style={s.bonusTitle}>시간이 더 필요해요?</Text>
+
+        {/* 최근 요청 상태 배너 */}
+        {hasPending && (
+          <View style={[s.reqBadge, s.reqPending]}>
+            <Text style={s.reqBadgeText}>⏳ 부모님께 요청 중... 답변을 기다려요</Text>
+          </View>
+        )}
+        {hasApproved && (
+          <View style={[s.reqBadge, s.reqApproved]}>
+            <Text style={s.reqBadgeText}>
+              ✅ 승인! +{lastRequest.extraMinutes}분 추가됐어요
+            </Text>
+          </View>
+        )}
+        {hasRejected && (
+          <View style={[s.reqBadge, s.reqRejected]}>
+            <Text style={s.reqBadgeText}>❌ 이번엔 거절됐어요</Text>
+          </View>
+        )}
+
         <Text style={s.bonusDesc}>이유를 작성하고 부모님께 요청하세요</Text>
-        <TouchableOpacity style={s.bonusBtn}>
-          <Text style={s.bonusBtnText}>추가 시간 요청</Text>
+        <TouchableOpacity
+          style={[s.bonusBtn, hasPending && s.bonusBtnDisabled]}
+          onPress={() => !hasPending && setModalVisible(true)}
+          disabled={hasPending}
+        >
+          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]}>
+            {hasPending ? '요청 대기 중' : '추가 시간 요청'}
+          </Text>
         </TouchableOpacity>
       </View>
+
+      {/* 요청 모달 */}
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitle}>추가 시간 요청</Text>
+
+            {/* 추가 시간 선택 */}
+            <Text style={s.modalLabel}>얼마나 필요해요?</Text>
+            <View style={s.optionRow}>
+              {EXTRA_OPTIONS.map((min) => (
+                <TouchableOpacity
+                  key={min}
+                  style={[s.optionBtn, extraMin === min && s.optionBtnActive]}
+                  onPress={() => setExtraMin(min)}
+                >
+                  <Text style={[s.optionText, extraMin === min && s.optionTextActive]}>
+                    {min}분
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* 이유 입력 */}
+            <Text style={s.modalLabel}>이유를 알려주세요</Text>
+            <TextInput
+              style={s.textarea}
+              placeholder="예) 숙제 때문에 유튜브를 더 봐야 해요"
+              placeholderTextColor={Colors.textHint}
+              multiline
+              numberOfLines={3}
+              value={reason}
+              onChangeText={setReason}
+            />
+
+            {/* 버튼 */}
+            <View style={s.modalBtns}>
+              <TouchableOpacity style={s.cancelBtn} onPress={() => { setModalVisible(false); setReason(''); setExtraMin(30); }}>
+                <Text style={s.cancelBtnText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.submitBtn, (!reason.trim() || sending) && s.submitBtnDisabled]}
+                onPress={handleSendRequest}
+                disabled={!reason.trim() || sending}
+              >
+                <Text style={s.submitBtnText}>{sending ? '전송 중...' : '요청 보내기'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -191,9 +315,38 @@ const s = StyleSheet.create({
   barFill:     { height: 4, borderRadius: 2 },
   noLimit:     { fontSize: 11, color: Colors.textHint, marginTop: 4 },
 
-  bonusCard:    { backgroundColor: Colors.bg, borderRadius: 12, padding: 16 },
-  bonusTitle:   { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 4 },
-  bonusDesc:    { fontSize: 13, color: Colors.textSecondary, marginBottom: 12 },
-  bonusBtn:     { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  bonusBtnText: { fontSize: 14, fontWeight: '500', color: Colors.primary },
+  bonusCard:           { backgroundColor: Colors.bg, borderRadius: 12, padding: 16 },
+  bonusTitle:          { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },
+  bonusDesc:           { fontSize: 13, color: Colors.textSecondary, marginBottom: 12 },
+  bonusBtn:            { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  bonusBtnDisabled:    { backgroundColor: Colors.border },
+  bonusBtnText:        { fontSize: 14, fontWeight: '500', color: Colors.primary },
+  bonusBtnTextDisabled:{ color: Colors.textHint },
+
+  reqBadge:    { borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 10 },
+  reqPending:  { backgroundColor: '#FFF8E1' },
+  reqApproved: { backgroundColor: '#E8F5E9' },
+  reqRejected: { backgroundColor: '#FCEBEB' },
+  reqBadgeText:{ fontSize: 13, color: Colors.textPrimary },
+
+  // 모달
+  modalOverlay:{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalBox:    { backgroundColor: Colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
+  modalTitle:  { fontSize: 18, fontWeight: '700', color: Colors.textPrimary, marginBottom: 20 },
+  modalLabel:  { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginBottom: 10 },
+
+  optionRow:       { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  optionBtn:       { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.bg, alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border },
+  optionBtnActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
+  optionText:      { fontSize: 14, color: Colors.textSecondary },
+  optionTextActive:{ color: Colors.primary, fontWeight: '600' },
+
+  textarea:    { backgroundColor: Colors.bg, borderRadius: 10, padding: 12, fontSize: 14, color: Colors.textPrimary, minHeight: 80, textAlignVertical: 'top', marginBottom: 20 },
+
+  modalBtns:       { flexDirection: 'row', gap: 10 },
+  cancelBtn:       { flex: 1, paddingVertical: 13, borderRadius: 10, backgroundColor: Colors.bg, alignItems: 'center' },
+  cancelBtnText:   { fontSize: 15, color: Colors.textSecondary },
+  submitBtn:       { flex: 2, paddingVertical: 13, borderRadius: 10, backgroundColor: Colors.primary, alignItems: 'center' },
+  submitBtnDisabled:{ backgroundColor: Colors.border },
+  submitBtnText:   { fontSize: 15, fontWeight: '600', color: Colors.white },
 });
