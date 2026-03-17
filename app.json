@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "scheme": "safekids",
     "platforms": ["ios", "android", "web"],
-    "plugins": ["expo-router"],
+    "plugins": ["expo-router", "expo-dev-client", "./modules/expo-usage-stats"],
     "experiments": {
       "typedRoutes": true
     }
