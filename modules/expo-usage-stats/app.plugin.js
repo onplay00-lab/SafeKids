@@ -2,16 +2,13 @@ const { withAndroidManifest } = require('@expo/config-plugins');
 
 const withUsageStats = (config) => {
   return withAndroidManifest(config, (config) => {
-    const manifest = config.modResults;
-    const mainApplication = manifest.manifest.application?.[0];
+    const manifest = config.modResults.manifest;
 
-    if (!mainApplication) return config;
-
-    if (!mainApplication['uses-permission']) {
-      mainApplication['uses-permission'] = [];
+    if (!manifest['uses-permission']) {
+      manifest['uses-permission'] = [];
     }
 
-    const permissions = mainApplication['uses-permission'];
+    const permissions = manifest['uses-permission'];
     const usagePermission = 'android.permission.PACKAGE_USAGE_STATS';
 
     const alreadyAdded = permissions.some(
@@ -20,7 +17,11 @@ const withUsageStats = (config) => {
 
     if (!alreadyAdded) {
       permissions.push({
-        $: { 'android:name': usagePermission },
+        $: {
+          'android:name': usagePermission,
+          'xmlns:tools': 'http://schemas.android.com/tools',
+          'tools:ignore': 'ProtectedPermissions',
+        },
       });
     }
 
