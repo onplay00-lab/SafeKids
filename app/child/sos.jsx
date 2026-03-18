@@ -108,7 +108,7 @@ export default function ChildSOS() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-  content: { padding: 20, paddingTop: 60, paddingBottom: 40 },
+  content: { padding: 20, paddingTop: 60, paddingBottom: 100 },
   title: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
   subtitle: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginBottom: 24, marginTop: 4 },
   sosArea: { alignItems: 'center', marginBottom: 28 },
