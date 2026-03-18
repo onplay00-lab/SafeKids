@@ -4,7 +4,9 @@ import {
   Platform, Modal, TextInput, KeyboardAvoidingView,
 } from 'react-native';
 import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../constants/firebase';
+import { signOut } from 'firebase/auth';
+import { useRouter } from 'expo-router';
+import { db, auth } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { startLocationTracking } from '../../src/services/locationService';
@@ -22,6 +24,7 @@ function fmt(m) {
 const EXTRA_OPTIONS = [15, 30, 60];
 
 export default function ChildHome() {
+  const router = useRouter();
   const { user, familyId } = useAuth();
   const [locStatus, setLocStatus]     = useState('위치 확인 중...');
   const [screenData, setScreenData]   = useState(null);
@@ -90,6 +93,11 @@ export default function ChildHome() {
 
   const finalExtraMin = isCustom ? (parseInt(customMin, 10) || 0) : extraMin;
   const isValidTime = finalExtraMin > 0 && finalExtraMin <= 480;
+
+  async function handleLogout() {
+    await signOut(auth);
+    router.replace('/login');
+  }
 
   async function handleSendRequest() {
     if (!familyId || !user || !reason.trim() || !isValidTime) return;
@@ -233,6 +241,11 @@ export default function ChildHome() {
         </TouchableOpacity>
       </View>
 
+      {/* 로그아웃 */}
+      <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
+        <Text style={s.logoutText}>Sign out</Text>
+      </TouchableOpacity>
+
       {/* 요청 모달 */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -349,6 +362,9 @@ const s = StyleSheet.create({
   bonusBtnDisabled:    { backgroundColor: Colors.border },
   bonusBtnText:        { fontSize: 14, fontWeight: '500', color: Colors.primary },
   bonusBtnTextDisabled:{ color: Colors.textHint },
+
+  logoutBtn:   { alignItems: 'center', paddingVertical: 14, marginTop: 20, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
+  logoutText:  { fontSize: 14, color: Colors.danger },
 
   reqBadge:    { borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 10 },
   reqPending:  { backgroundColor: '#FFF8E1' },
