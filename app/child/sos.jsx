@@ -1,13 +1,22 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Linking } from 'react-native';
+import { signOut } from 'firebase/auth';
+import { useRouter } from 'expo-router';
+import { auth } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { sendSOS } from '../../src/services/sosService';
 
 export default function ChildSOS() {
+  const router = useRouter();
   const { familyId } = useAuth();
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+
+  async function handleLogout() {
+    await signOut(auth);
+    router.replace('/login');
+  }
 
   async function handleSOS() {
     if (sending) return;
@@ -89,6 +98,10 @@ export default function ChildSOS() {
           <Text style={s.callDesc}>소방/구급</Text>
         </TouchableOpacity>
       </View>
+
+      <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
+        <Text style={s.logoutText}>Sign out</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -115,4 +128,6 @@ const s = StyleSheet.create({
   callBtn: { flex: 1, backgroundColor: Colors.dangerBg, borderRadius: 12, paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: '#F09595' },
   callNum: { fontSize: 22, fontWeight: '700', color: Colors.danger },
   callDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  logoutBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 32, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
+  logoutText: { fontSize: 14, color: Colors.danger },
 });
