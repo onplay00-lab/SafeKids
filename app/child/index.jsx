@@ -4,9 +4,7 @@ import {
   Platform, Modal, TextInput, KeyboardAvoidingView,
 } from 'react-native';
 import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
-import { useRouter } from 'expo-router';
-import { db, auth } from '../../constants/firebase';
+import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { startLocationTracking } from '../../src/services/locationService';
@@ -24,7 +22,6 @@ function fmt(m) {
 const EXTRA_OPTIONS = [15, 30, 60];
 
 export default function ChildHome() {
-  const router = useRouter();
   const { user, familyId } = useAuth();
   const [locStatus, setLocStatus]     = useState('위치 확인 중...');
   const [screenData, setScreenData]   = useState(null);
@@ -94,11 +91,6 @@ export default function ChildHome() {
   const finalExtraMin = isCustom ? (parseInt(customMin, 10) || 0) : extraMin;
   const isValidTime = finalExtraMin > 0 && finalExtraMin <= 480;
 
-  async function handleLogout() {
-    await signOut(auth);
-    router.replace('/login');
-  }
-
   async function handleSendRequest() {
     if (!familyId || !user || !reason.trim() || !isValidTime) return;
     setSending(true);
@@ -135,12 +127,7 @@ export default function ChildHome() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <View style={s.titleRow}>
-        <Text style={s.title}>SafeKids</Text>
-        <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-          <Text style={s.logoutText}>Sign out</Text>
-        </TouchableOpacity>
-      </View>
+      <Text style={s.title}>SafeKids</Text>
 
       {/* 위치 상태 */}
       <View style={s.locBar}>
@@ -323,7 +310,7 @@ export default function ChildHome() {
 const s = StyleSheet.create({
   container:   { flex: 1, backgroundColor: Colors.white },
   content:     { padding: 20, paddingTop: 60, paddingBottom: 40 },
-  title:       { fontSize: 22, fontWeight: '700', color: Colors.textPrimary },
+  title:       { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16 },
   locBar:      { backgroundColor: '#E8F5E9', borderRadius: 8, padding: 10, marginBottom: 12, alignItems: 'center' },
   locText:     { fontSize: 13, color: '#2E7D32' },
 
@@ -363,9 +350,6 @@ const s = StyleSheet.create({
   bonusBtnText:        { fontSize: 14, fontWeight: '500', color: Colors.primary },
   bonusBtnTextDisabled:{ color: Colors.textHint },
 
-  titleRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  logoutBtn:   { paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: Colors.border, borderRadius: 8 },
-  logoutText:  { fontSize: 13, color: Colors.danger },
 
   reqBadge:    { borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 10 },
   reqPending:  { backgroundColor: '#FFF8E1' },
