@@ -1,21 +1,16 @@
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
-apply plugin: 'expo-module-gradle-plugin'
 
 group = 'expo.modules.usagestats'
 version = '0.1.0'
 
-expoModule {
-  canBePublished = false
-}
-
 android {
   namespace "expo.modules.usagestats"
-  compileSdkVersion safeExtGet("compileSdkVersion", 34)
+  compileSdkVersion safeExtGet("compileSdkVersion", 36)
 
   defaultConfig {
-    minSdkVersion safeExtGet("minSdkVersion", 23)
-    targetSdkVersion safeExtGet("targetSdkVersion", 34)
+    minSdkVersion safeExtGet("minSdkVersion", 24)
+    targetSdkVersion safeExtGet("targetSdkVersion", 36)
   }
 
   compileOptions {
