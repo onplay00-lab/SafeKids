@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Platform, Modal, TextInput, KeyboardAvoidingView,
+  Platform, Modal, TextInput, KeyboardAvoidingView, AppState,
 } from 'react-native';
 import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
@@ -16,7 +16,7 @@ import {
 function fmt(m) {
   const h = Math.floor(m / 60);
   const mm = m % 60;
-  return h > 0 ? `${h}h ${mm}m` : `${mm}m`;
+  return h > 0 ? `${h}h ${String(mm).padStart(2, '0')}m` : `${mm}m`;
 }
 
 const EXTRA_OPTIONS = [15, 30, 60];
@@ -25,8 +25,8 @@ export default function ChildHome() {
   const { user, familyId } = useAuth();
   const [locStatus, setLocStatus]     = useState('위치 확인 중...');
   const [screenData, setScreenData]   = useState(null);
-  const [needPermission, setNeedPermission] = useState(false);
   const [trackingMode, setTrackingMode] = useState(null);
+  const trackingModeRef = useRef(null);
 
   // 추가 시간 요청 관련 상태
   const [modalVisible, setModalVisible] = useState(false);
@@ -55,14 +55,29 @@ export default function ChildHome() {
       await initScreentime();
       if (Platform.OS === 'android') {
         const hasPerm = await checkUsagePermission();
-        if (!hasPerm) setNeedPermission(true);
+        if (!hasPerm) await requestUsagePermission(); // 자동으로 설정 화면 열기
       }
       const mode = await startUsageTracking();
+      trackingModeRef.current = mode;
       setTrackingMode(mode);
       unsubscribe = subscribeMyScreentime((data) => setScreenData(data));
     }
     init();
-    return () => { stopUsageTracking(); unsubscribe(); };
+
+    // 설정에서 권한 허용 후 앱 복귀 시 네이티브 모드로 전환
+    const appStateSub = AppState.addEventListener('change', async (state) => {
+      if (state === 'active' && trackingModeRef.current === 'fallback') {
+        const hasPerm = await checkUsagePermission();
+        if (hasPerm) {
+          await stopUsageTracking();
+          const mode = await startUsageTracking();
+          trackingModeRef.current = mode;
+          setTrackingMode(mode);
+        }
+      }
+    });
+
+    return () => { stopUsageTracking(); unsubscribe(); appStateSub.remove(); };
   }, []);
 
   // 내 요청 상태 실시간 구독
@@ -79,14 +94,6 @@ export default function ChildHome() {
     });
     return () => unsub();
   }, [familyId, user]);
-
-  async function handleGrantPermission() {
-    await requestUsagePermission();
-    setNeedPermission(false);
-    await stopUsageTracking();
-    const mode = await startUsageTracking();
-    setTrackingMode(mode);
-  }
 
   const finalExtraMin = isCustom ? (parseInt(customMin, 10) || 0) : extraMin;
   const isValidTime = finalExtraMin > 0 && finalExtraMin <= 480;
@@ -134,19 +141,6 @@ export default function ChildHome() {
         <Text style={s.locText}>{locStatus}</Text>
       </View>
 
-      {/* 권한 안내 배너 */}
-      {needPermission && Platform.OS === 'android' && (
-        <View style={s.permBanner}>
-          <Text style={s.permTitle}>📊 앱 사용 시간 권한이 필요해요</Text>
-          <Text style={s.permDesc}>
-            실제 앱별 사용 시간을 측정하려면{'\n'}기기 설정에서 권한을 허용해 주세요.
-          </Text>
-          <TouchableOpacity style={s.permBtn} onPress={handleGrantPermission}>
-            <Text style={s.permBtnText}>설정에서 허용하기</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       {/* 측정 방식 뱃지 */}
       {trackingMode && (
         <View style={[s.modeBadge, trackingMode === 'native' ? s.modeNative : s.modeFallback]}>
@@ -159,7 +153,7 @@ export default function ChildHome() {
       {/* 남은 시간 링 */}
       <View style={s.timerArea}>
         <View style={[s.timerRing, { borderColor: remaining > 0 ? Colors.primaryLight : '#FCEBEB' }]}>
-          <Text style={s.timerVal}>{fmt(remaining)}</Text>
+          <Text style={s.timerVal} adjustsFontSizeToFit numberOfLines={1}>{fmt(remaining)}</Text>
           <Text style={s.timerLabel}>남은 시간</Text>
         </View>
         <Text style={s.timerSub}>오늘 {fmt(dailyUsage)} 사용 / 제한 {fmt(dailyLimit)}</Text>
@@ -327,7 +321,7 @@ const s = StyleSheet.create({
 
   timerArea:   { alignItems: 'center', marginBottom: 20 },
   timerRing:   { width: 140, height: 140, borderRadius: 70, borderWidth: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  timerVal:    { fontSize: 24, fontWeight: '700', color: Colors.textPrimary },
+  timerVal:    { fontSize: 24, fontWeight: '700', color: Colors.textPrimary, width: 110, textAlign: 'center' },
   timerLabel:  { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   timerSub:    { fontSize: 13, color: Colors.textSecondary },
 
