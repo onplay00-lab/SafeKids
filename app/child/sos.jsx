@@ -117,7 +117,7 @@ const s = StyleSheet.create({
   sosBtn: { width: 140, height: 140, borderRadius: 70, backgroundColor: Colors.dangerBg, borderWidth: 3, borderColor: '#F09595', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   sosBtnSent: { backgroundColor: Colors.safeBg, borderColor: '#97C459' },
   sosBtnDisabled: { opacity: 0.6 },
-  sosText: { fontSize: 28, fontWeight: '700', color: Colors.danger },
+  sosText: { fontSize: 22, fontWeight: '700', color: Colors.danger },
   sosHint: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   infoCard: { backgroundColor: Colors.bg, borderRadius: 12, padding: 16, marginBottom: 20 },
   infoTitle: { fontSize: 14, fontWeight: '500', color: Colors.textPrimary, marginBottom: 10 },
