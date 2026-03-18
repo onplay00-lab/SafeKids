@@ -30,6 +30,9 @@
     "react-native-screens": "~4.16.0",
     "react-native-web": "^0.21.0"
   },
+  "overrides": {
+    "expo-font": "~14.0.11"
+  },
   "private": true,
   "devDependencies": {
     "@types/react": "~19.1.10",
