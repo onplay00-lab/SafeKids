@@ -5,7 +5,7 @@ apply plugin: 'expo-module-gradle-plugin'
 group = 'expo.modules.usagestats'
 version = '0.1.0'
 
-expo {
+expoModule {
   canBePublished = false
 }
 
