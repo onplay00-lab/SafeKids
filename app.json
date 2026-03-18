@@ -6,6 +6,12 @@
     "orientation": "portrait",
     "scheme": "safekids",
     "platforms": ["ios", "android", "web"],
+    "android": {
+      "package": "com.onplay00.safekids"
+    },
+    "ios": {
+      "bundleIdentifier": "com.onplay00.safekids"
+    },
     "plugins": ["expo-router", "expo-dev-client", "./modules/expo-usage-stats", "expo-notifications"],
     "experiments": {
       "typedRoutes": true
