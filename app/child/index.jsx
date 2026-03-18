@@ -56,10 +56,6 @@ export default function ChildHome() {
     let unsubscribe = () => {};
     async function init() {
       await initScreentime();
-      if (Platform.OS === 'android') {
-        const hasPerm = await checkUsagePermission();
-        if (!hasPerm) await requestUsagePermission(); // 자동으로 설정 화면 열기
-      }
       const mode = await startUsageTracking();
       trackingModeRef.current = mode;
       setTrackingMode(mode);
@@ -70,11 +66,10 @@ export default function ChildHome() {
     // 설정에서 권한 허용 후 앱 복귀 시 재처리
     const appStateSub = AppState.addEventListener('change', async (state) => {
       if (state === 'active') {
-        // 스크린타임: fallback → native 전환
-        if (trackingModeRef.current === 'fallback') {
+        // 권한 허용 후 native 전환
+        if (trackingModeRef.current === 'no-permission') {
           const hasPerm = await checkUsagePermission();
           if (hasPerm) {
-            await stopUsageTracking();
             const mode = await startUsageTracking();
             trackingModeRef.current = mode;
             setTrackingMode(mode);
@@ -163,12 +158,14 @@ export default function ChildHome() {
         <Text style={s.locText}>{locStatus}</Text>
       </View>
 
-      {/* 측정 방식 뱃지 */}
-      {trackingMode && (
-        <View style={[s.modeBadge, trackingMode === 'native' ? s.modeNative : s.modeFallback]}>
-          <Text style={s.modeText}>
-            {trackingMode === 'native' ? '✅ 실제 앱 사용량 측정 중' : '⏱ SafeKids 앱 사용시간만 측정'}
-          </Text>
+      {/* 스크린타임 권한 필요 */}
+      {trackingMode === 'no-permission' && (
+        <View style={s.permBanner}>
+          <Text style={s.permTitle}>스크린 타임 측정 권한 필요</Text>
+          <Text style={s.permDesc}>실제 스크린 타임을 측정하려면{'\n'}앱 사용 기록 접근 권한을 허용해 주세요.</Text>
+          <TouchableOpacity style={s.permBtn} onPress={requestUsagePermission}>
+            <Text style={s.permBtnText}>권한 허용하기</Text>
+          </TouchableOpacity>
         </View>
       )}
 

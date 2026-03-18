@@ -205,20 +205,17 @@ async function flushElapsedTime() {
 }
 
 // ============================================
-// 4) 사용시간 추적 시작
+// 4) 사용시간 추적 시작 (네이티브 전용 - 권한 있을 때만)
 // ============================================
 export async function startUsageTracking() {
-  if (flushInterval) return;
+  if (flushInterval) return 'no-permission';
 
-  // Android이면 네이티브 모듈 우선 시도
   if (Platform.OS === 'android') {
     try {
       const hasPermission = await checkPermission();
       if (hasPermission) {
         usingNative = true;
-        // 즉시 한 번 동기화
         await syncFromNative();
-        // 60초마다 실제 사용량 동기화
         flushInterval = setInterval(() => {
           syncFromNative().catch(console.error);
         }, 60000);
@@ -226,33 +223,20 @@ export async function startUsageTracking() {
         return 'native';
       }
     } catch (e) {
-      console.warn('[Screentime] 네이티브 모듈 오류, 폴백:', e);
+      console.warn('[Screentime] 네이티브 모듈 오류:', e);
     }
+    return 'no-permission';
   }
 
-  // 폴백: AppState 기반 시간 측정
+  // iOS: AppState 기반
   usingNative = false;
   foregroundStartTime = Date.now();
   isAppActive = true;
-
   appStateSub = AppState.addEventListener('change', async (nextState) => {
-    if (nextState === 'active') {
-      isAppActive = true;
-      foregroundStartTime = Date.now();
-    } else if (nextState === 'background' || nextState === 'inactive') {
-      await flushElapsedTime();
-      isAppActive = false;
-      foregroundStartTime = null;
-    }
+    if (nextState === 'active') { isAppActive = true; foregroundStartTime = Date.now(); }
+    else if (nextState === 'background' || nextState === 'inactive') { await flushElapsedTime(); isAppActive = false; foregroundStartTime = null; }
   });
-
-  flushInterval = setInterval(async () => {
-    if (isAppActive && foregroundStartTime) {
-      await flushElapsedTime();
-    }
-  }, 30000);
-
-  console.log('[Screentime] AppState 폴백 모드');
+  flushInterval = setInterval(async () => { if (isAppActive && foregroundStartTime) await flushElapsedTime(); }, 30000);
   return 'fallback';
 }
 
