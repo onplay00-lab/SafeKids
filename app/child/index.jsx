@@ -363,7 +363,7 @@ const s = StyleSheet.create({
   bonusDesc:           { fontSize: 12, color: Colors.textSecondary, marginBottom: 12 },
   bonusBtn:            { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16 },
   bonusBtnDisabled:    { backgroundColor: Colors.border },
-  bonusBtnText:        { fontSize: 13, fontWeight: '500', color: Colors.primary, textAlign: 'center' },
+  bonusBtnText:        { fontSize: 11, fontWeight: '500', color: Colors.primary, textAlign: 'center' },
   bonusBtnTextDisabled:{ color: Colors.textHint },
 
 
@@ -382,7 +382,7 @@ const s = StyleSheet.create({
   optionRow:       { flexDirection: 'row', gap: 10, marginBottom: 20 },
   optionBtn:       { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10, backgroundColor: Colors.bg, borderWidth: 1.5, borderColor: Colors.border },
   optionBtnActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
-  optionText:      { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
+  optionText:      { fontSize: 12, color: Colors.textSecondary, textAlign: 'center' },
   optionTextActive:{ color: Colors.primary, fontWeight: '600' },
 
   customRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 8 },
