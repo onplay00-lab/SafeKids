@@ -243,7 +243,7 @@ export default function ChildHome() {
           onPress={() => !hasPending && setModalVisible(true)}
           disabled={hasPending}
         >
-          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]} allowFontScaling={false} adjustsFontSizeToFit numberOfLines={1}>
+          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]} allowFontScaling={false}>
             {hasPending ? '요청 대기 중' : '추가 시간 요청'}
           </Text>
         </TouchableOpacity>
@@ -264,7 +264,7 @@ export default function ChildHome() {
                   style={[s.optionBtn, !isCustom && extraMin === min && s.optionBtnActive]}
                   onPress={() => { setExtraMin(min); setIsCustom(false); }}
                 >
-                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]} allowFontScaling={false} adjustsFontSizeToFit numberOfLines={1}>
+                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]} allowFontScaling={false}>
                     {min}분
                   </Text>
                 </TouchableOpacity>
@@ -273,7 +273,7 @@ export default function ChildHome() {
                 style={[s.optionBtn, isCustom && s.optionBtnActive]}
                 onPress={() => setIsCustom(true)}
               >
-                <Text style={[s.optionText, isCustom && s.optionTextActive]} allowFontScaling={false} adjustsFontSizeToFit numberOfLines={1}>기타</Text>
+                <Text style={[s.optionText, isCustom && s.optionTextActive]} allowFontScaling={false}>기타</Text>
               </TouchableOpacity>
             </View>
             {isCustom && (
