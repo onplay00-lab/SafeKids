@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Platform, Modal, TextInput, KeyboardAvoidingView, AppState,
 } from 'react-native';
-import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
@@ -101,11 +101,18 @@ export default function ChildHome() {
     const q = query(
       collection(db, 'families', familyId, 'timeRequests'),
       where('childUid', '==', user.uid),
-      orderBy('createdAt', 'desc'),
     );
     const unsub = onSnapshot(q, (snap) => {
-      if (!snap.empty) setLastRequest({ id: snap.docs[0].id, ...snap.docs[0].data() });
-      else setLastRequest(null);
+      if (!snap.empty) {
+        const sorted = snap.docs.sort((a, b) => {
+          const aTime = a.data().createdAt?.toMillis?.() || 0;
+          const bTime = b.data().createdAt?.toMillis?.() || 0;
+          return bTime - aTime;
+        });
+        setLastRequest({ id: sorted[0].id, ...sorted[0].data() });
+      } else {
+        setLastRequest(null);
+      }
     });
     return () => unsub();
   }, [familyId, user]);
@@ -236,7 +243,7 @@ export default function ChildHome() {
           onPress={() => !hasPending && setModalVisible(true)}
           disabled={hasPending}
         >
-          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]}>
+          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]} allowFontScaling={false}>
             {hasPending ? '요청 대기 중' : '추가 시간 요청'}
           </Text>
         </TouchableOpacity>
@@ -257,7 +264,7 @@ export default function ChildHome() {
                   style={[s.optionBtn, !isCustom && extraMin === min && s.optionBtnActive]}
                   onPress={() => { setExtraMin(min); setIsCustom(false); }}
                 >
-                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]}>
+                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]} allowFontScaling={false}>
                     {min}분
                   </Text>
                 </TouchableOpacity>
@@ -266,7 +273,7 @@ export default function ChildHome() {
                 style={[s.optionBtn, isCustom && s.optionBtnActive]}
                 onPress={() => setIsCustom(true)}
               >
-                <Text style={[s.optionText, isCustom && s.optionTextActive]}>기타</Text>
+                <Text style={[s.optionText, isCustom && s.optionTextActive]} allowFontScaling={false}>기타</Text>
               </TouchableOpacity>
             </View>
             {isCustom && (

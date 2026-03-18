@@ -62,9 +62,9 @@ export default function ChildSOS() {
             {sending ? (
               <ActivityIndicator size="large" color={Colors.danger} />
             ) : sent ? (
-              <Text style={[s.sosText, { color: Colors.safe }]}>SENT</Text>
+              <Text style={[s.sosText, { color: Colors.safe }]} allowFontScaling={false}>SENT</Text>
             ) : (
-              <Text style={s.sosText}>SOS</Text>
+              <Text style={s.sosText} allowFontScaling={false}>SOS</Text>
             )}
           </TouchableOpacity>
           <Text style={s.sosHint}>
