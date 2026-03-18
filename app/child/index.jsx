@@ -135,7 +135,12 @@ export default function ChildHome() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <Text style={s.title}>SafeKids</Text>
+      <View style={s.titleRow}>
+        <Text style={s.title}>SafeKids</Text>
+        <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
+          <Text style={s.logoutText}>Sign out</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* 위치 상태 */}
       <View style={s.locBar}>
@@ -241,11 +246,6 @@ export default function ChildHome() {
         </TouchableOpacity>
       </View>
 
-      {/* 로그아웃 */}
-      <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-        <Text style={s.logoutText}>Sign out</Text>
-      </TouchableOpacity>
-
       {/* 요청 모달 */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -323,7 +323,7 @@ export default function ChildHome() {
 const s = StyleSheet.create({
   container:   { flex: 1, backgroundColor: Colors.white },
   content:     { padding: 20, paddingTop: 60, paddingBottom: 40 },
-  title:       { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16 },
+  title:       { fontSize: 22, fontWeight: '700', color: Colors.textPrimary },
   locBar:      { backgroundColor: '#E8F5E9', borderRadius: 8, padding: 10, marginBottom: 12, alignItems: 'center' },
   locText:     { fontSize: 13, color: '#2E7D32' },
 
@@ -363,8 +363,9 @@ const s = StyleSheet.create({
   bonusBtnText:        { fontSize: 14, fontWeight: '500', color: Colors.primary },
   bonusBtnTextDisabled:{ color: Colors.textHint },
 
-  logoutBtn:   { alignItems: 'center', paddingVertical: 14, marginTop: 20, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
-  logoutText:  { fontSize: 14, color: Colors.danger },
+  titleRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  logoutBtn:   { paddingVertical: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: Colors.border, borderRadius: 8 },
+  logoutText:  { fontSize: 13, color: Colors.danger },
 
   reqBadge:    { borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 10 },
   reqPending:  { backgroundColor: '#FFF8E1' },
