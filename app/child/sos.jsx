@@ -62,9 +62,9 @@ export default function ChildSOS() {
             {sending ? (
               <ActivityIndicator size="large" color={Colors.danger} />
             ) : sent ? (
-              <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: '700', color: Colors.safe, textAlign: 'center', width: 160 }}>SENT</Text>
+              <Text allowFontScaling={false} style={{ fontSize: 30, fontWeight: '700', color: Colors.safe, textAlign: 'center', width: 130 }}>SENT</Text>
             ) : (
-              <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: '700', color: Colors.danger, textAlign: 'center', width: 160 }}>SOS</Text>
+              <Text allowFontScaling={false} style={{ fontSize: 30, fontWeight: '700', color: Colors.danger, textAlign: 'center', width: 130 }}>SOS</Text>
             )}
           </TouchableOpacity>
           <Text style={s.sosHint}>
@@ -114,7 +114,7 @@ const s = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
   subtitle: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginBottom: 24, marginTop: 4 },
   sosArea: { alignItems: 'center', marginBottom: 28 },
-  sosBtn: { width: 200, height: 200, borderRadius: 100, backgroundColor: Colors.dangerBg, borderWidth: 3, borderColor: '#F09595', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  sosBtn: { width: 160, height: 160, borderRadius: 80, backgroundColor: Colors.dangerBg, borderWidth: 3, borderColor: '#F09595', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   sosBtnSent: { backgroundColor: Colors.safeBg, borderColor: '#97C459' },
   sosBtnDisabled: { opacity: 0.6 },
   sosText: { fontSize: 22, fontWeight: '700', color: Colors.danger, textAlign: 'center' },
