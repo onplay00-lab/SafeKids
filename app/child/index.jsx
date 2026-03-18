@@ -7,6 +7,7 @@ import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp 
 import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
+import * as Location from 'expo-location';
 import { startLocationTracking } from '../../src/services/locationService';
 import {
   initScreentime, startUsageTracking, stopUsageTracking,
@@ -27,6 +28,7 @@ export default function ChildHome() {
   const [screenData, setScreenData]   = useState(null);
   const [trackingMode, setTrackingMode] = useState(null);
   const trackingModeRef = useRef(null);
+  const locStatusRef = useRef(null);
 
   // 추가 시간 요청 관련 상태
   const [modalVisible, setModalVisible] = useState(false);
@@ -41,6 +43,7 @@ export default function ChildHome() {
   useEffect(() => {
     startLocationTracking()
       .then((r) => {
+        locStatusRef.current = r;
         if (r === 'active')               setLocStatus('📍 위치 추적 활성화됨');
         else if (r === 'foreground-only') setLocStatus('📍 앱 사용 중에만 위치 확인');
         else                              setLocStatus('⚠️ 위치 권한이 필요합니다');
@@ -64,15 +67,27 @@ export default function ChildHome() {
     }
     init();
 
-    // 설정에서 권한 허용 후 앱 복귀 시 네이티브 모드로 전환
+    // 설정에서 권한 허용 후 앱 복귀 시 재처리
     const appStateSub = AppState.addEventListener('change', async (state) => {
-      if (state === 'active' && trackingModeRef.current === 'fallback') {
-        const hasPerm = await checkUsagePermission();
-        if (hasPerm) {
-          await stopUsageTracking();
-          const mode = await startUsageTracking();
-          trackingModeRef.current = mode;
-          setTrackingMode(mode);
+      if (state === 'active') {
+        // 스크린타임: fallback → native 전환
+        if (trackingModeRef.current === 'fallback') {
+          const hasPerm = await checkUsagePermission();
+          if (hasPerm) {
+            await stopUsageTracking();
+            const mode = await startUsageTracking();
+            trackingModeRef.current = mode;
+            setTrackingMode(mode);
+          }
+        }
+        // 위치: foreground-only → active(background) 전환
+        if (locStatusRef.current === 'foreground-only') {
+          const { status } = await Location.getBackgroundPermissionsAsync();
+          if (status === 'granted') {
+            const result = await startLocationTracking();
+            setLocStatus(result === 'active' ? '📍 위치 추적 활성화됨' : '📍 앱 사용 중에만 위치 확인');
+            locStatusRef.current = result;
+          }
         }
       }
     });
@@ -337,11 +352,11 @@ const s = StyleSheet.create({
   noLimit:     { fontSize: 11, color: Colors.textHint, marginTop: 4 },
 
   bonusCard:           { backgroundColor: Colors.bg, borderRadius: 12, padding: 16 },
-  bonusTitle:          { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },
-  bonusDesc:           { fontSize: 13, color: Colors.textSecondary, marginBottom: 12 },
+  bonusTitle:          { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },
+  bonusDesc:           { fontSize: 12, color: Colors.textSecondary, marginBottom: 12 },
   bonusBtn:            { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   bonusBtnDisabled:    { backgroundColor: Colors.border },
-  bonusBtnText:        { fontSize: 14, fontWeight: '500', color: Colors.primary },
+  bonusBtnText:        { fontSize: 13, fontWeight: '500', color: Colors.primary },
   bonusBtnTextDisabled:{ color: Colors.textHint },
 
 

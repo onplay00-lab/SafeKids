@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import { Linking } from 'react-native';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../constants/firebase';
 import Constants from 'expo-constants';
@@ -115,7 +116,8 @@ export async function startLocationTracking() {
   // Development Build: 백그라운드 추적
   const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
   if (bgStatus !== 'granted') {
-    console.log('백그라운드 위치 권한 거부됨 → 포그라운드 폴백');
+    console.log('백그라운드 위치 권한 거부됨 → 설정 화면 열기');
+    Linking.openSettings(); // 앱 설정에서 "항상 허용" 선택 유도
     if (!foregroundSubscription) {
       foregroundSubscription = await Location.watchPositionAsync(
         {
