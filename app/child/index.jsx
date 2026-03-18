@@ -243,7 +243,7 @@ export default function ChildHome() {
           onPress={() => !hasPending && setModalVisible(true)}
           disabled={hasPending}
         >
-          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]} allowFontScaling={false}>
+          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]} allowFontScaling={false} adjustsFontSizeToFit numberOfLines={1}>
             {hasPending ? '요청 대기 중' : '추가 시간 요청'}
           </Text>
         </TouchableOpacity>
@@ -264,7 +264,7 @@ export default function ChildHome() {
                   style={[s.optionBtn, !isCustom && extraMin === min && s.optionBtnActive]}
                   onPress={() => { setExtraMin(min); setIsCustom(false); }}
                 >
-                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]} allowFontScaling={false}>
+                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]} allowFontScaling={false} adjustsFontSizeToFit numberOfLines={1}>
                     {min}분
                   </Text>
                 </TouchableOpacity>
@@ -273,7 +273,7 @@ export default function ChildHome() {
                 style={[s.optionBtn, isCustom && s.optionBtnActive]}
                 onPress={() => setIsCustom(true)}
               >
-                <Text style={[s.optionText, isCustom && s.optionTextActive]} allowFontScaling={false}>기타</Text>
+                <Text style={[s.optionText, isCustom && s.optionTextActive]} allowFontScaling={false} adjustsFontSizeToFit numberOfLines={1}>기타</Text>
               </TouchableOpacity>
             </View>
             {isCustom && (
@@ -361,9 +361,9 @@ const s = StyleSheet.create({
   bonusCard:           { backgroundColor: Colors.bg, borderRadius: 12, padding: 16 },
   bonusTitle:          { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },
   bonusDesc:           { fontSize: 12, color: Colors.textSecondary, marginBottom: 12 },
-  bonusBtn:            { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  bonusBtn:            { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16 },
   bonusBtnDisabled:    { backgroundColor: Colors.border },
-  bonusBtnText:        { fontSize: 13, fontWeight: '500', color: Colors.primary },
+  bonusBtnText:        { fontSize: 13, fontWeight: '500', color: Colors.primary, textAlign: 'center' },
   bonusBtnTextDisabled:{ color: Colors.textHint },
 
 
@@ -380,9 +380,9 @@ const s = StyleSheet.create({
   modalLabel:  { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginBottom: 10 },
 
   optionRow:       { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  optionBtn:       { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.bg, alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border },
+  optionBtn:       { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10, backgroundColor: Colors.bg, borderWidth: 1.5, borderColor: Colors.border },
   optionBtnActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
-  optionText:      { fontSize: 14, color: Colors.textSecondary },
+  optionText:      { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
   optionTextActive:{ color: Colors.primary, fontWeight: '600' },
 
   customRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 8 },
