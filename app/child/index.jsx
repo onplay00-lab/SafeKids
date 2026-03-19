@@ -227,7 +227,7 @@ export default function ChildHome() {
           onPress={() => !hasPending && setModalVisible(true)}
           disabled={hasPending}
         >
-          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]}>
+          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
             {hasPending ? '요청 대기 중' : '추가 시간 요청'}
           </Text>
         </TouchableOpacity>

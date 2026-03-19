@@ -6,12 +6,10 @@ import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { registerPushToken } from '../../src/services/notificationService';
 
-function TabIcon({ label, focused }) {
+function TabIcon({ icon, focused }) {
   return (
-    <View style={{alignItems:'center', paddingTop:4}}>
-      <View style={{minWidth:32, height:24, borderRadius:6, paddingHorizontal:6, backgroundColor: focused ? Colors.coralLight : Colors.bgCard, alignItems:'center', justifyContent:'center'}}>
-        <Text style={{fontSize:10, fontWeight:'600', color: focused ? Colors.coral : Colors.textHint}} numberOfLines={1}>{label}</Text>
-      </View>
+    <View style={{alignItems:'center', justifyContent:'center', width:28, height:28}}>
+      <Text style={{fontSize:18}}>{icon}</Text>
     </View>
   );
 }
@@ -34,11 +32,11 @@ export default function ChildLayout() {
       tabBarStyle:{borderTopWidth:0.5, borderTopColor:Colors.border, backgroundColor:Colors.white, height: 52 + bottomPadding, paddingBottom: bottomPadding, paddingTop:6},
       tabBarActiveTintColor:Colors.coral,
       tabBarInactiveTintColor:Colors.textHint,
-      tabBarLabelStyle:{fontSize:11, marginTop:2},
+      tabBarLabelStyle:{fontSize:11, marginTop:0},
     }}>
-      <Tabs.Screen name="index" options={{title:'Home', tabBarIcon:({focused}) => <TabIcon label="Home" focused={focused}/>}} />
-      <Tabs.Screen name="promise" options={{title:'Promise', tabBarIcon:({focused}) => <TabIcon label="Promise" focused={focused}/>}} />
-      <Tabs.Screen name="sos" options={{title:'SOS', tabBarIcon:({focused}) => <TabIcon label="SOS" focused={focused}/>}} />
+      <Tabs.Screen name="index" options={{title:'홈', tabBarIcon:({focused}) => <TabIcon icon="🏠" focused={focused}/>}} />
+      <Tabs.Screen name="promise" options={{title:'약속', tabBarIcon:({focused}) => <TabIcon icon="✅" focused={focused}/>}} />
+      <Tabs.Screen name="sos" options={{title:'SOS', tabBarIcon:({focused}) => <TabIcon icon="🚨" focused={focused}/>}} />
     </Tabs>
   );
 }
