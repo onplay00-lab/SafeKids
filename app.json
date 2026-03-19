@@ -6,6 +6,12 @@
     "orientation": "portrait",
     "scheme": "safekids",
     "platforms": ["ios", "android", "web"],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/5266290a-3a64-4881-af30-52167f38801a"
+    },
     "android": {
       "package": "com.onplay00.safekids"
     },

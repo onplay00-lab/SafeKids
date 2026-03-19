@@ -18,7 +18,7 @@ function TabIcon({ label, focused }) {
 
 export default function ParentLayout() {
   const insets = useSafeAreaInsets();
-  const bottomPadding = Math.max(insets.bottom, 8);
+  const bottomPadding = Math.max(insets.bottom, 24);
   const { user } = useAuth();
 
   // 로그인 시 푸시 토큰 등록 (SOS 알림 수신)
