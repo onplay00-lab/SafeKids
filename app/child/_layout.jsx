@@ -9,8 +9,8 @@ import { registerPushToken } from '../../src/services/notificationService';
 function TabIcon({ label, focused }) {
   return (
     <View style={{alignItems:'center', paddingTop:4}}>
-      <View style={{width:24, height:24, borderRadius:6, backgroundColor: focused ? Colors.coralLight : Colors.bgCard, alignItems:'center', justifyContent:'center'}}>
-        <Text style={{fontSize:10, fontWeight:'600', color: focused ? Colors.coral : Colors.textHint}}>{label.charAt(0)}</Text>
+      <View style={{minWidth:32, height:24, borderRadius:6, paddingHorizontal:6, backgroundColor: focused ? Colors.coralLight : Colors.bgCard, alignItems:'center', justifyContent:'center'}}>
+        <Text style={{fontSize:10, fontWeight:'600', color: focused ? Colors.coral : Colors.textHint}} numberOfLines={1}>{label}</Text>
       </View>
     </View>
   );

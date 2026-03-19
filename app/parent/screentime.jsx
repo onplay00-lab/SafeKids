@@ -4,7 +4,7 @@ import { doc, getDoc, collection, query, onSnapshot, orderBy, updateDoc, serverT
 import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
-import { subscribeScreentime, updateAppLimit } from '../../src/services/screentimeService';
+import { subscribeScreentime, updateAppLimit, updateDailyLimit } from '../../src/services/screentimeService';
 
 function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}h ${mm}m` : `${mm}m`; }
 
@@ -118,6 +118,32 @@ export default function ParentScreenTime() {
       <View style={s.card}>
         <View style={s.row}><Text style={s.cardLabel}>Today</Text><Text style={s.cardVal}>{fmt(dailyUsage)} / {fmt(dailyLimit)}</Text></View>
         <View style={s.barBig}><View style={[s.barFillBig, { width: `${Math.min(100, pctTotal)}%` }]} /></View>
+
+        {/* 일일 제한 시간 설정 */}
+        <View style={s.limitSection}>
+          <Text style={s.limitLabel}>일일 제한 시간</Text>
+          <View style={s.limitRow}>
+            <TouchableOpacity
+              style={s.limitBtn}
+              onPress={() => {
+                const next = Math.max(30, dailyLimit - 30);
+                if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next);
+              }}
+            >
+              <Text style={s.limitBtnText}>-30분</Text>
+            </TouchableOpacity>
+            <Text style={s.limitValue}>{fmt(dailyLimit)}</Text>
+            <TouchableOpacity
+              style={s.limitBtn}
+              onPress={() => {
+                const next = Math.min(720, dailyLimit + 30);
+                if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next);
+              }}
+            >
+              <Text style={s.limitBtnText}>+30분</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
       {/* 추가 시간 요청 목록 */}
@@ -148,20 +174,45 @@ export default function ParentScreenTime() {
 
       <Text style={s.section}>App usage</Text>
       {appEntries.map(([key, a]) => (
-        <View key={key} style={s.appRow}>
-          <View style={[s.appIcon, { backgroundColor: a.color }]}><Text style={[s.appIconText, { color: a.tc }]}>{a.code}</Text></View>
-          <View style={s.appInfo}>
-            <Text style={s.appName}>{a.name}</Text>
-            <Text style={s.appTime}>{a.used}min{a.limit ? ` / limit ${a.limit}min` : ''}</Text>
+        <View key={key} style={s.appCard}>
+          <View style={s.appRow}>
+            <View style={[s.appIcon, { backgroundColor: a.color }]}><Text style={[s.appIconText, { color: a.tc }]}>{a.code}</Text></View>
+            <View style={s.appInfo}>
+              <Text style={s.appName}>{a.name}</Text>
+              <Text style={s.appTime}>{a.used}min{a.limit ? ` / ${a.limit}min` : ''}</Text>
+            </View>
+            {a.limit ? (
+              <TouchableOpacity style={[s.toggle, s.toggleOn]} onPress={() => handleToggleLimit(key, a)}>
+                <View style={[s.toggleThumb, s.toggleThumbOn]} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={s.unlimit} onPress={() => handleToggleLimit(key, a)}>
+                <Text style={s.unlimitText}>No limit</Text>
+              </TouchableOpacity>
+            )}
           </View>
-          {a.limit ? (
-            <TouchableOpacity style={[s.toggle, s.toggleOn]} onPress={() => handleToggleLimit(key, a)}>
-              <View style={[s.toggleThumb, s.toggleThumbOn]} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={s.unlimit} onPress={() => handleToggleLimit(key, a)}>
-              <Text style={s.unlimitText}>No limit</Text>
-            </TouchableOpacity>
+          {a.limit && (
+            <View style={s.appLimitRow}>
+              <TouchableOpacity
+                style={s.appLimitBtn}
+                onPress={() => {
+                  const next = Math.max(15, a.limit - 15);
+                  if (selectedChild) updateAppLimit(familyId, selectedChild.uid, key, next);
+                }}
+              >
+                <Text style={s.appLimitBtnText}>-15</Text>
+              </TouchableOpacity>
+              <Text style={s.appLimitVal}>{a.limit}분</Text>
+              <TouchableOpacity
+                style={s.appLimitBtn}
+                onPress={() => {
+                  const next = Math.min(480, a.limit + 15);
+                  if (selectedChild) updateAppLimit(familyId, selectedChild.uid, key, next);
+                }}
+              >
+                <Text style={s.appLimitBtnText}>+15</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       ))}
@@ -192,7 +243,8 @@ const s = StyleSheet.create({
   barBig:      { height: 6, backgroundColor: Colors.border, borderRadius: 3 },
   barFillBig:  { height: 6, backgroundColor: Colors.primary, borderRadius: 3 },
   section:     { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginTop: 12, marginBottom: 10 },
-  appRow:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
+  appCard:     { paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
+  appRow:      { flexDirection: 'row', alignItems: 'center' },
   appIcon:     { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   appIconText: { fontSize: 11, fontWeight: '600' },
   appInfo:     { flex: 1 },
@@ -204,9 +256,21 @@ const s = StyleSheet.create({
   toggleThumbOn:{ transform: [{ translateX: 16 }] },
   unlimit:     { backgroundColor: Colors.safeBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   unlimitText: { fontSize: 11, color: Colors.safe, fontWeight: '500' },
+  appLimitRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 8, gap: 10 },
+  appLimitBtn: { backgroundColor: Colors.primaryLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
+  appLimitBtnText: { fontSize: 12, fontWeight: '600', color: Colors.primary },
+  appLimitVal: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, minWidth: 44, textAlign: 'center' },
   schedRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
   schedName:   { fontSize: 13, color: Colors.textPrimary },
   schedTime:   { fontSize: 13, color: Colors.textSecondary },
+
+  // 일일 제한 설정
+  limitSection:{ marginTop: 14, borderTopWidth: 0.5, borderTopColor: Colors.border, paddingTop: 12 },
+  limitLabel:  { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
+  limitRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 },
+  limitBtn:    { backgroundColor: Colors.primaryLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14 },
+  limitBtnText:{ fontSize: 14, fontWeight: '600', color: Colors.primary },
+  limitValue:  { fontSize: 18, fontWeight: '700', color: Colors.textPrimary, minWidth: 80, textAlign: 'center' },
 
   // 요청 카드
   reqCard:     { backgroundColor: '#FFF8E1', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#FFD54F' },

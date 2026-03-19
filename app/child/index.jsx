@@ -16,7 +16,7 @@ import {
 function fmt(m) {
   const h = Math.floor(m / 60);
   const mm = m % 60;
-  return h > 0 ? `${h}h ${mm}m` : `${mm}m`;
+  return `${String(h).padStart(2, '0')}시간 ${String(mm).padStart(2, '0')}분`;
 }
 
 const EXTRA_OPTIONS = [15, 30, 60];
@@ -233,6 +233,27 @@ export default function ChildHome() {
         </TouchableOpacity>
       </View>
 
+      {/* 시간 초과 잠금 모달 */}
+      <Modal visible={remaining <= 0 && screenData !== null} transparent={false} animationType="fade" onRequestClose={() => {}}>
+        <View style={s.lockOverlay}>
+          <Text style={s.lockIcon}>⏰</Text>
+          <Text style={s.lockTitle}>오늘 사용 시간이{'\n'}끝났어요!</Text>
+          <Text style={s.lockDesc}>
+            부모님이 설정한 {fmt(dailyLimit)}을{'\n'}모두 사용했어요
+          </Text>
+          {hasPending ? (
+            <View style={s.lockPendingBox}>
+              <Text style={s.lockPendingText}>⏳ 부모님께 요청 중...{'\n'}답변을 기다려주세요</Text>
+            </View>
+          ) : (
+            <TouchableOpacity style={s.lockBtn} onPress={() => setModalVisible(true)}>
+              <Text style={s.lockBtnText}>추가 시간 요청하기</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={s.lockHint}>부모님이 승인하면 자동으로 돌아가요</Text>
+        </View>
+      </Modal>
+
       {/* 요청 모달 */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -248,7 +269,7 @@ export default function ChildHome() {
                   style={[s.optionBtn, !isCustom && extraMin === min && s.optionBtnActive]}
                   onPress={() => { setExtraMin(min); setIsCustom(false); }}
                 >
-                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]}>
+                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]} numberOfLines={1} adjustsFontSizeToFit>
                     {min}분
                   </Text>
                 </TouchableOpacity>
@@ -326,8 +347,8 @@ const s = StyleSheet.create({
   modeText:    { fontSize: 12, color: Colors.textSecondary },
 
   timerArea:   { alignItems: 'center', marginBottom: 20 },
-  timerRing:   { width: 140, height: 140, borderRadius: 70, borderWidth: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  timerVal:    { fontSize: 24, fontWeight: '700', color: Colors.textPrimary },
+  timerRing:   { width: 180, height: 180, borderRadius: 90, borderWidth: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  timerVal:    { fontSize: 20, fontWeight: '700', color: Colors.textPrimary },
   timerLabel:  { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   timerSub:    { fontSize: 13, color: Colors.textSecondary },
 
@@ -345,7 +366,7 @@ const s = StyleSheet.create({
   bonusCard:           { backgroundColor: Colors.bg, borderRadius: 12, padding: 16 },
   bonusTitle:          { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },
   bonusDesc:           { fontSize: 13, color: Colors.textSecondary, marginBottom: 12 },
-  bonusBtn:            { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  bonusBtn:            { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
   bonusBtnDisabled:    { backgroundColor: Colors.border },
   bonusBtnText:        { fontSize: 14, fontWeight: '500', color: Colors.primary },
   bonusBtnTextDisabled:{ color: Colors.textHint },
@@ -356,6 +377,17 @@ const s = StyleSheet.create({
   reqRejected: { backgroundColor: '#FCEBEB' },
   reqBadgeText:{ fontSize: 13, color: Colors.textPrimary },
 
+  // 잠금 모달
+  lockOverlay: { flex: 1, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  lockIcon:    { fontSize: 64, marginBottom: 24 },
+  lockTitle:   { fontSize: 28, fontWeight: '700', color: '#fff', textAlign: 'center', marginBottom: 16, lineHeight: 38 },
+  lockDesc:    { fontSize: 16, color: '#aaa', textAlign: 'center', marginBottom: 32, lineHeight: 24 },
+  lockBtn:     { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16, paddingHorizontal: 40, marginBottom: 16 },
+  lockBtnText: { fontSize: 17, fontWeight: '600', color: '#fff' },
+  lockPendingBox:  { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 14, paddingVertical: 16, paddingHorizontal: 24, marginBottom: 16 },
+  lockPendingText: { fontSize: 15, color: '#FFD54F', textAlign: 'center', lineHeight: 22 },
+  lockHint:    { fontSize: 13, color: '#666', textAlign: 'center' },
+
   // 모달
   modalOverlay:{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalBox:    { backgroundColor: Colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 40 },
@@ -363,7 +395,7 @@ const s = StyleSheet.create({
   modalLabel:  { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginBottom: 10 },
 
   optionRow:       { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  optionBtn:       { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.bg, alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border },
+  optionBtn:       { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: Colors.border },
   optionBtnActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
   optionText:      { fontSize: 14, color: Colors.textSecondary },
   optionTextActive:{ color: Colors.primary, fontWeight: '600' },
