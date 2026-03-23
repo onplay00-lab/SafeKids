@@ -6,15 +6,19 @@
     "orientation": "portrait",
     "scheme": "safekids",
     "platforms": ["ios", "android", "web"],
-    "plugins": ["expo-router", "expo-dev-client", "expo-notifications", "./modules/expo-usage-stats"],
-    "android": {
-      "package": "com.onplay00lab.safekids",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+    "runtimeVersion": {
+      "policy": "appVersion"
     },
+    "updates": {
+      "url": "https://u.expo.dev/5266290a-3a64-4881-af30-52167f38801a"
+    },
+    "android": {
+      "package": "com.onplay00.safekids"
+    },
+    "ios": {
+      "bundleIdentifier": "com.onplay00.safekids"
+    },
+    "plugins": ["expo-router", "expo-dev-client", "./modules/expo-usage-stats", "expo-notifications"],
     "experiments": {
       "typedRoutes": true
     },

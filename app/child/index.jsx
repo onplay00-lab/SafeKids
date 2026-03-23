@@ -1,13 +1,12 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Platform, Modal, TextInput, KeyboardAvoidingView, AppState,
+  Platform, Modal, TextInput, KeyboardAvoidingView,
 } from 'react-native';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
-import * as Location from 'expo-location';
 import { startLocationTracking } from '../../src/services/locationService';
 import {
   initScreentime, startUsageTracking, stopUsageTracking,
@@ -17,7 +16,7 @@ import {
 function fmt(m) {
   const h = Math.floor(m / 60);
   const mm = m % 60;
-  return h > 0 ? `${h}h ${String(mm).padStart(2, '0')}m` : `${mm}m`;
+  return `${String(h).padStart(2, '0')}시간 ${String(mm).padStart(2, '0')}분`;
 }
 
 const EXTRA_OPTIONS = [15, 30, 60];
@@ -26,9 +25,8 @@ export default function ChildHome() {
   const { user, familyId } = useAuth();
   const [locStatus, setLocStatus]     = useState('위치 확인 중...');
   const [screenData, setScreenData]   = useState(null);
+  const [needPermission, setNeedPermission] = useState(false);
   const [trackingMode, setTrackingMode] = useState(null);
-  const trackingModeRef = useRef(null);
-  const locStatusRef = useRef(null);
 
   // 추가 시간 요청 관련 상태
   const [modalVisible, setModalVisible] = useState(false);
@@ -43,7 +41,6 @@ export default function ChildHome() {
   useEffect(() => {
     startLocationTracking()
       .then((r) => {
-        locStatusRef.current = r;
         if (r === 'active')               setLocStatus('📍 위치 추적 활성화됨');
         else if (r === 'foreground-only') setLocStatus('📍 앱 사용 중에만 위치 확인');
         else                              setLocStatus('⚠️ 위치 권한이 필요합니다');
@@ -56,38 +53,16 @@ export default function ChildHome() {
     let unsubscribe = () => {};
     async function init() {
       await initScreentime();
+      if (Platform.OS === 'android') {
+        const hasPerm = await checkUsagePermission();
+        if (!hasPerm) setNeedPermission(true);
+      }
       const mode = await startUsageTracking();
-      trackingModeRef.current = mode;
       setTrackingMode(mode);
       unsubscribe = subscribeMyScreentime((data) => setScreenData(data));
     }
     init();
-
-    // 설정에서 권한 허용 후 앱 복귀 시 재처리
-    const appStateSub = AppState.addEventListener('change', async (state) => {
-      if (state === 'active') {
-        // 권한 허용 후 native 전환
-        if (trackingModeRef.current === 'no-permission') {
-          const hasPerm = await checkUsagePermission();
-          if (hasPerm) {
-            const mode = await startUsageTracking();
-            trackingModeRef.current = mode;
-            setTrackingMode(mode);
-          }
-        }
-        // 위치: foreground-only → active(background) 전환
-        if (locStatusRef.current === 'foreground-only') {
-          const { status } = await Location.getBackgroundPermissionsAsync();
-          if (status === 'granted') {
-            const result = await startLocationTracking();
-            setLocStatus(result === 'active' ? '📍 위치 추적 활성화됨' : '📍 앱 사용 중에만 위치 확인');
-            locStatusRef.current = result;
-          }
-        }
-      }
-    });
-
-    return () => { stopUsageTracking(); unsubscribe(); appStateSub.remove(); };
+    return () => { stopUsageTracking(); unsubscribe(); };
   }, []);
 
   // 내 요청 상태 실시간 구독
@@ -96,21 +71,22 @@ export default function ChildHome() {
     const q = query(
       collection(db, 'families', familyId, 'timeRequests'),
       where('childUid', '==', user.uid),
+      orderBy('createdAt', 'desc'),
     );
     const unsub = onSnapshot(q, (snap) => {
-      if (!snap.empty) {
-        const sorted = snap.docs.sort((a, b) => {
-          const aTime = a.data().createdAt?.toMillis?.() || 0;
-          const bTime = b.data().createdAt?.toMillis?.() || 0;
-          return bTime - aTime;
-        });
-        setLastRequest({ id: sorted[0].id, ...sorted[0].data() });
-      } else {
-        setLastRequest(null);
-      }
+      if (!snap.empty) setLastRequest({ id: snap.docs[0].id, ...snap.docs[0].data() });
+      else setLastRequest(null);
     });
     return () => unsub();
   }, [familyId, user]);
+
+  async function handleGrantPermission() {
+    await requestUsagePermission();
+    setNeedPermission(false);
+    await stopUsageTracking();
+    const mode = await startUsageTracking();
+    setTrackingMode(mode);
+  }
 
   const finalExtraMin = isCustom ? (parseInt(customMin, 10) || 0) : extraMin;
   const isValidTime = finalExtraMin > 0 && finalExtraMin <= 480;
@@ -158,21 +134,32 @@ export default function ChildHome() {
         <Text style={s.locText}>{locStatus}</Text>
       </View>
 
-      {/* 스크린타임 권한 필요 */}
-      {trackingMode === 'no-permission' && (
+      {/* 권한 안내 배너 */}
+      {needPermission && Platform.OS === 'android' && (
         <View style={s.permBanner}>
-          <Text style={s.permTitle}>스크린 타임 측정 권한 필요</Text>
-          <Text style={s.permDesc}>실제 스크린 타임을 측정하려면{'\n'}앱 사용 기록 접근 권한을 허용해 주세요.</Text>
-          <TouchableOpacity style={s.permBtn} onPress={requestUsagePermission}>
-            <Text style={s.permBtnText}>권한 허용하기</Text>
+          <Text style={s.permTitle}>📊 앱 사용 시간 권한이 필요해요</Text>
+          <Text style={s.permDesc}>
+            실제 앱별 사용 시간을 측정하려면{'\n'}기기 설정에서 권한을 허용해 주세요.
+          </Text>
+          <TouchableOpacity style={s.permBtn} onPress={handleGrantPermission}>
+            <Text style={s.permBtnText}>설정에서 허용하기</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 측정 방식 뱃지 */}
+      {trackingMode && (
+        <View style={[s.modeBadge, trackingMode === 'native' ? s.modeNative : s.modeFallback]}>
+          <Text style={s.modeText}>
+            {trackingMode === 'native' ? '✅ 실제 앱 사용량 측정 중' : '⏱ SafeKids 앱 사용시간만 측정'}
+          </Text>
         </View>
       )}
 
       {/* 남은 시간 링 */}
       <View style={s.timerArea}>
         <View style={[s.timerRing, { borderColor: remaining > 0 ? Colors.primaryLight : '#FCEBEB' }]}>
-          <Text style={s.timerVal} adjustsFontSizeToFit numberOfLines={1}>{fmt(remaining)}</Text>
+          <Text style={s.timerVal}>{fmt(remaining)}</Text>
           <Text style={s.timerLabel}>남은 시간</Text>
         </View>
         <Text style={s.timerSub}>오늘 {fmt(dailyUsage)} 사용 / 제한 {fmt(dailyLimit)}</Text>
@@ -240,11 +227,32 @@ export default function ChildHome() {
           onPress={() => !hasPending && setModalVisible(true)}
           disabled={hasPending}
         >
-          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]} allowFontScaling={false}>
+          <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
             {hasPending ? '요청 대기 중' : '추가 시간 요청'}
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* 시간 초과 잠금 모달 */}
+      <Modal visible={remaining <= 0 && screenData !== null} transparent={false} animationType="fade" onRequestClose={() => {}}>
+        <View style={s.lockOverlay}>
+          <Text style={s.lockIcon}>⏰</Text>
+          <Text style={s.lockTitle}>오늘 사용 시간이{'\n'}끝났어요!</Text>
+          <Text style={s.lockDesc}>
+            부모님이 설정한 {fmt(dailyLimit)}을{'\n'}모두 사용했어요
+          </Text>
+          {hasPending ? (
+            <View style={s.lockPendingBox}>
+              <Text style={s.lockPendingText}>⏳ 부모님께 요청 중...{'\n'}답변을 기다려주세요</Text>
+            </View>
+          ) : (
+            <TouchableOpacity style={s.lockBtn} onPress={() => setModalVisible(true)}>
+              <Text style={s.lockBtnText}>추가 시간 요청하기</Text>
+            </TouchableOpacity>
+          )}
+          <Text style={s.lockHint}>부모님이 승인하면 자동으로 돌아가요</Text>
+        </View>
+      </Modal>
 
       {/* 요청 모달 */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
@@ -261,7 +269,7 @@ export default function ChildHome() {
                   style={[s.optionBtn, !isCustom && extraMin === min && s.optionBtnActive]}
                   onPress={() => { setExtraMin(min); setIsCustom(false); }}
                 >
-                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]} allowFontScaling={false}>
+                  <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]} numberOfLines={1} adjustsFontSizeToFit>
                     {min}분
                   </Text>
                 </TouchableOpacity>
@@ -270,7 +278,7 @@ export default function ChildHome() {
                 style={[s.optionBtn, isCustom && s.optionBtnActive]}
                 onPress={() => setIsCustom(true)}
               >
-                <Text style={[s.optionText, isCustom && s.optionTextActive]} allowFontScaling={false}>기타</Text>
+                <Text style={[s.optionText, isCustom && s.optionTextActive]}>기타</Text>
               </TouchableOpacity>
             </View>
             {isCustom && (
@@ -339,8 +347,8 @@ const s = StyleSheet.create({
   modeText:    { fontSize: 12, color: Colors.textSecondary },
 
   timerArea:   { alignItems: 'center', marginBottom: 20 },
-  timerRing:   { width: 140, height: 140, borderRadius: 70, borderWidth: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  timerVal:    { fontSize: 24, fontWeight: '700', color: Colors.textPrimary, width: 110, textAlign: 'center' },
+  timerRing:   { width: 180, height: 180, borderRadius: 90, borderWidth: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  timerVal:    { fontSize: 20, fontWeight: '700', color: Colors.textPrimary },
   timerLabel:  { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   timerSub:    { fontSize: 13, color: Colors.textSecondary },
 
@@ -356,19 +364,29 @@ const s = StyleSheet.create({
   noLimit:     { fontSize: 11, color: Colors.textHint, marginTop: 4 },
 
   bonusCard:           { backgroundColor: Colors.bg, borderRadius: 12, padding: 16 },
-  bonusTitle:          { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },
-  bonusDesc:           { fontSize: 12, color: Colors.textSecondary, marginBottom: 12 },
-  bonusBtn:            { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16 },
+  bonusTitle:          { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },
+  bonusDesc:           { fontSize: 13, color: Colors.textSecondary, marginBottom: 12 },
+  bonusBtn:            { backgroundColor: Colors.primaryLight, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
   bonusBtnDisabled:    { backgroundColor: Colors.border },
-  bonusBtnText:        { fontSize: 11, fontWeight: '500', color: Colors.primary, textAlign: 'center' },
+  bonusBtnText:        { fontSize: 14, fontWeight: '500', color: Colors.primary },
   bonusBtnTextDisabled:{ color: Colors.textHint },
-
 
   reqBadge:    { borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 10 },
   reqPending:  { backgroundColor: '#FFF8E1' },
   reqApproved: { backgroundColor: '#E8F5E9' },
   reqRejected: { backgroundColor: '#FCEBEB' },
   reqBadgeText:{ fontSize: 13, color: Colors.textPrimary },
+
+  // 잠금 모달
+  lockOverlay: { flex: 1, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  lockIcon:    { fontSize: 64, marginBottom: 24 },
+  lockTitle:   { fontSize: 28, fontWeight: '700', color: '#fff', textAlign: 'center', marginBottom: 16, lineHeight: 38 },
+  lockDesc:    { fontSize: 16, color: '#aaa', textAlign: 'center', marginBottom: 32, lineHeight: 24 },
+  lockBtn:     { backgroundColor: Colors.primary, borderRadius: 14, paddingVertical: 16, paddingHorizontal: 40, marginBottom: 16 },
+  lockBtnText: { fontSize: 17, fontWeight: '600', color: '#fff' },
+  lockPendingBox:  { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 14, paddingVertical: 16, paddingHorizontal: 24, marginBottom: 16 },
+  lockPendingText: { fontSize: 15, color: '#FFD54F', textAlign: 'center', lineHeight: 22 },
+  lockHint:    { fontSize: 13, color: '#666', textAlign: 'center' },
 
   // 모달
   modalOverlay:{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
@@ -377,9 +395,9 @@ const s = StyleSheet.create({
   modalLabel:  { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginBottom: 10 },
 
   optionRow:       { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  optionBtn:       { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10, backgroundColor: Colors.bg, borderWidth: 1.5, borderColor: Colors.border },
+  optionBtn:       { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: Colors.border },
   optionBtnActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
-  optionText:      { fontSize: 12, color: Colors.textSecondary, textAlign: 'center' },
+  optionText:      { fontSize: 14, color: Colors.textSecondary },
   optionTextActive:{ color: Colors.primary, fontWeight: '600' },
 
   customRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 8 },

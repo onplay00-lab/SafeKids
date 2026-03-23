@@ -37,10 +37,11 @@ class UsageStatsModule : Module() {
         }
 
         AsyncFunction("requestPermission") {
-            val context = appContext.reactContext ?: return@AsyncFunction
+            val context = appContext.reactContext ?: return@AsyncFunction null
             val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
+            null
         }
 
         AsyncFunction("getUsageStats") { startTime: Long, endTime: Long ->

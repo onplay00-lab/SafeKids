@@ -10,13 +10,13 @@ import { sendSOS } from '../../src/services/sosService';
 export default function ChildSOS() {
   const router = useRouter();
   const { familyId } = useAuth();
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
 
   async function handleLogout() {
     await signOut(auth);
     router.replace('/login');
   }
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
 
   async function handleSOS() {
     if (sending) return;
@@ -47,77 +47,75 @@ export default function ChildSOS() {
   }
 
   return (
-    <View style={s.container}>
-      <ScrollView contentContainerStyle={s.content}>
-        <Text style={s.title}>Emergency</Text>
-        <Text style={s.subtitle}>3초 길게 눌러서 부모님께 알림 전송</Text>
+    <ScrollView style={s.container} contentContainerStyle={s.content}>
+      <Text style={s.title}>Emergency</Text>
+      <Text style={s.subtitle}>3초 길게 눌러서 부모님께 알림 전송</Text>
 
-        <View style={s.sosArea}>
-          <TouchableOpacity
-            style={[s.sosBtn, sent && s.sosBtnSent, sending && s.sosBtnDisabled]}
-            onLongPress={confirmSOS}
-            delayLongPress={3000}
-            disabled={sending || sent}
-          >
-            {sending ? (
-              <ActivityIndicator size="large" color={Colors.danger} />
-            ) : sent ? (
-              <Text allowFontScaling={false} style={{ fontSize: 30, fontWeight: '700', color: Colors.safe, textAlign: 'center', width: 130 }}>SENT</Text>
-            ) : (
-              <Text allowFontScaling={false} style={{ fontSize: 30, fontWeight: '700', color: Colors.danger, textAlign: 'center', width: 130 }}>SOS</Text>
-            )}
-          </TouchableOpacity>
-          <Text style={s.sosHint}>
-            {sent
-              ? '✓ 부모님께 전송되었습니다\n30초 후 재전송 가능'
-              : '3초 길게 눌러서\n부모님께 알림 전송'}
-          </Text>
-        </View>
+      <View style={s.sosArea}>
+        <TouchableOpacity
+          style={[s.sosBtn, sent && s.sosBtnSent, sending && s.sosBtnDisabled]}
+          onLongPress={confirmSOS}
+          delayLongPress={3000}
+          disabled={sending || sent}
+        >
+          {sending ? (
+            <ActivityIndicator size="large" color={Colors.danger} />
+          ) : sent ? (
+            <Text style={[s.sosText, { color: Colors.safe }]}>SENT</Text>
+          ) : (
+            <Text style={s.sosText}>SOS</Text>
+          )}
+        </TouchableOpacity>
+        <Text style={s.sosHint}>
+          {sent
+            ? '✓ 부모님께 전송되었습니다\n30초 후 재전송 가능'
+            : '3초 길게 눌러서\n부모님께 알림 전송'}
+        </Text>
+      </View>
 
-        <View style={s.infoCard}>
-          <Text style={s.infoTitle}>SOS 전송 시</Text>
-          {[
-            '부모님 폰에 푸시 알림 전송',
-            '현재 위치 정보 전송',
-            '부모 앱에 알림 기록 저장',
-          ].map((t) => (
-            <View key={t} style={s.infoRow}>
-              <View style={s.infoCheck}><Text style={s.checkMark}>✓</Text></View>
-              <Text style={s.infoText}>{t}</Text>
-            </View>
-          ))}
-        </View>
+      <View style={s.infoCard}>
+        <Text style={s.infoTitle}>SOS 전송 시</Text>
+        {[
+          '부모님 폰에 푸시 알림 전송',
+          '현재 위치 정보 전송',
+          '부모 앱에 알림 기록 저장',
+        ].map((t) => (
+          <View key={t} style={s.infoRow}>
+            <View style={s.infoCheck}><Text style={s.checkMark}>✓</Text></View>
+            <Text style={s.infoText}>{t}</Text>
+          </View>
+        ))}
+      </View>
 
-        <Text style={s.emergencyLabel}>긴급 신고</Text>
-        <View style={s.callRow}>
-          <TouchableOpacity style={s.callBtn} onPress={() => Linking.openURL('tel:112')}>
-            <Text style={s.callNum}>112</Text>
-            <Text style={s.callDesc}>경찰</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.callBtn} onPress={() => Linking.openURL('tel:119')}>
-            <Text style={s.callNum}>119</Text>
-            <Text style={s.callDesc}>소방/구급</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+      <Text style={s.emergencyLabel}>긴급 신고</Text>
+      <View style={s.callRow}>
+        <TouchableOpacity style={s.callBtn} onPress={() => Linking.openURL('tel:112')}>
+          <Text style={s.callNum}>112</Text>
+          <Text style={s.callDesc}>경찰</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.callBtn} onPress={() => Linking.openURL('tel:119')}>
+          <Text style={s.callNum}>119</Text>
+          <Text style={s.callDesc}>소방/구급</Text>
+        </TouchableOpacity>
+      </View>
 
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
         <Text style={s.logoutText}>Sign out</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-  content: { padding: 20, paddingTop: 60, paddingBottom: 20 },
+  content: { padding: 20, paddingTop: 60, paddingBottom: 40 },
   title: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginBottom: 4 },
   subtitle: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginBottom: 24, marginTop: 4 },
   sosArea: { alignItems: 'center', marginBottom: 28 },
-  sosBtn: { width: 160, height: 160, borderRadius: 80, backgroundColor: Colors.dangerBg, borderWidth: 3, borderColor: '#F09595', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  sosBtn: { width: 140, height: 140, borderRadius: 70, backgroundColor: Colors.dangerBg, borderWidth: 3, borderColor: '#F09595', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   sosBtnSent: { backgroundColor: Colors.safeBg, borderColor: '#97C459' },
   sosBtnDisabled: { opacity: 0.6 },
-  sosText: { fontSize: 22, fontWeight: '700', color: Colors.danger, textAlign: 'center' },
+  sosText: { fontSize: 28, fontWeight: '700', color: Colors.danger },
   sosHint: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   infoCard: { backgroundColor: Colors.bg, borderRadius: 12, padding: 16, marginBottom: 20 },
   infoTitle: { fontSize: 14, fontWeight: '500', color: Colors.textPrimary, marginBottom: 10 },
@@ -130,6 +128,6 @@ const s = StyleSheet.create({
   callBtn: { flex: 1, backgroundColor: Colors.dangerBg, borderRadius: 12, paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: '#F09595' },
   callNum: { fontSize: 22, fontWeight: '700', color: Colors.danger },
   callDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  logoutBtn: { alignItems: 'center', paddingVertical: 14, marginHorizontal: 20, marginBottom: 16, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
+  logoutBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 32, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
   logoutText: { fontSize: 14, color: Colors.danger },
 });

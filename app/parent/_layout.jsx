@@ -6,19 +6,17 @@ import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { registerPushToken } from '../../src/services/notificationService';
 
-function TabIcon({ label, focused }) {
+function TabIcon({ icon }) {
   return (
-    <View style={{alignItems:'center', paddingTop:4}}>
-      <View style={{width:24, height:24, borderRadius:6, backgroundColor: focused ? Colors.primaryLight : Colors.bgCard, alignItems:'center', justifyContent:'center'}}>
-        <Text style={{fontSize:10, fontWeight:'600', color: focused ? Colors.primary : Colors.textHint}}>{label.charAt(0)}</Text>
-      </View>
+    <View style={{alignItems:'center', justifyContent:'center', width:28, height:28}}>
+      <Text style={{fontSize:18}}>{icon}</Text>
     </View>
   );
 }
 
 export default function ParentLayout() {
   const insets = useSafeAreaInsets();
-  const bottomPadding = Math.max(insets.bottom, 8);
+  const bottomPadding = Math.max(insets.bottom, 24);
   const { user } = useAuth();
 
   // 로그인 시 푸시 토큰 등록 (SOS 알림 수신)
@@ -34,12 +32,12 @@ export default function ParentLayout() {
       tabBarStyle: {borderTopWidth:0.5, borderTopColor:Colors.border, backgroundColor:Colors.white, height: 52 + bottomPadding, paddingBottom: bottomPadding, paddingTop:6},
       tabBarActiveTintColor: Colors.primary,
       tabBarInactiveTintColor: Colors.textHint,
-      tabBarLabelStyle: {fontSize:11, marginTop:2},
+      tabBarLabelStyle: {fontSize:11, marginTop:0},
     }}>
-      <Tabs.Screen name="index" options={{title:'Home', tabBarIcon:({focused}) => <TabIcon label="Home" focused={focused}/>}} />
-      <Tabs.Screen name="location" options={{title:'Location', tabBarIcon:({focused}) => <TabIcon label="Location" focused={focused}/>}} />
-      <Tabs.Screen name="screentime" options={{title:'Time', tabBarIcon:({focused}) => <TabIcon label="Time" focused={focused}/>}} />
-      <Tabs.Screen name="settings" options={{title:'Settings', tabBarIcon:({focused}) => <TabIcon label="Settings" focused={focused}/>}} />
+      <Tabs.Screen name="index" options={{title:'홈', tabBarIcon:({focused}) => <TabIcon icon="🏠" focused={focused}/>}} />
+      <Tabs.Screen name="location" options={{title:'위치', tabBarIcon:({focused}) => <TabIcon icon="📍" focused={focused}/>}} />
+      <Tabs.Screen name="screentime" options={{title:'시간', tabBarIcon:({focused}) => <TabIcon icon="⏰" focused={focused}/>}} />
+      <Tabs.Screen name="settings" options={{title:'설정', tabBarIcon:({focused}) => <TabIcon icon="⚙️" focused={focused}/>}} />
     </Tabs>
   );
 }
