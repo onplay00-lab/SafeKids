@@ -10,7 +10,7 @@ export async function sendSOS(familyId) {
   const user = auth.currentUser;
   if (!user || !familyId) throw new Error('Not authenticated');
 
-  // 현재 위치 가져오기 (실패해도 SOS는 전송)
+  // 현재 위치 + 주소 가져오기 (실패해도 SOS는 전송)
   let locationData = null;
   try {
     const { status } = await Location.getForegroundPermissionsAsync();
@@ -23,6 +23,18 @@ export async function sendSOS(familyId) {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
       };
+      try {
+        const [addr] = await Location.reverseGeocodeAsync({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
+        if (addr) {
+          locationData.address = [addr.region, addr.city, addr.district, addr.street, addr.name]
+            .filter(Boolean).join(' ');
+        }
+      } catch (e2) {
+        console.log('주소 변환 실패:', e2);
+      }
     }
   } catch (e) {
     console.log('Location unavailable during SOS:', e);
@@ -51,7 +63,9 @@ export async function sendSOS(familyId) {
           await sendPushNotification({
             token: parentData.pushToken,
             title: '🚨 SOS 알림',
-            body: `${childName}이(가) 위험 신호를 보냈습니다!`,
+            body: locationData?.address
+              ? `${childName}이(가) 위험 신호를 보냈습니다! 위치: ${locationData.address}`
+              : `${childName}이(가) 위험 신호를 보냈습니다!`,
             data: { type: 'sos', sosId: sosDoc.id, familyId },
           });
         }

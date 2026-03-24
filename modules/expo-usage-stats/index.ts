@@ -33,3 +33,39 @@ export async function getUsageStats(
   if (!isAndroid || !UsageStats) return [];
   return await UsageStats.getUsageStats(startTime, endTime);
 }
+
+// 오버레이 관련 함수
+export async function checkOverlayPermission(): Promise<boolean> {
+  if (!isAndroid || !UsageStats) return false;
+  return await UsageStats.checkOverlayPermission();
+}
+
+export async function requestOverlayPermission(): Promise<void> {
+  if (!isAndroid || !UsageStats) return;
+  await UsageStats.requestOverlayPermission();
+}
+
+export async function showLockOverlay(message: string): Promise<void> {
+  if (!isAndroid || !UsageStats) return;
+  await UsageStats.showLockOverlay(message);
+}
+
+export async function hideLockOverlay(): Promise<void> {
+  if (!isAndroid || !UsageStats) return;
+  await UsageStats.hideLockOverlay();
+}
+
+export async function isLocked(): Promise<boolean> {
+  if (!isAndroid || !UsageStats) return false;
+  return await UsageStats.isLocked();
+}
+
+export async function getBatteryLevel(): Promise<number> {
+  if (!isAndroid || !UsageStats) return -1;
+  return await UsageStats.getBatteryLevel();
+}
+
+export async function isCharging(): Promise<boolean> {
+  if (!isAndroid || !UsageStats) return false;
+  return await UsageStats.isCharging();
+}

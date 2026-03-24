@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4A90D9"/>
+      <stop offset="1" stop-color="#2E6BB5"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E8F4FD"/>
+      <stop offset="1" stop-color="#D0E8F7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="url(#bg)"/>
+
+  <!-- Shield outer -->
+  <path d="M256 76 C336 76 396 96 411 146 L411 276 C411 356 336 411 256 441 C176 411 101 356 101 276 L101 146 C116 96 176 76 256 76Z" fill="rgba(255,255,255,0.95)"/>
+
+  <!-- Shield inner -->
+  <path d="M256 106 C321 106 371 121 381 146 L381 266 C381 334 321 381 256 406 C191 381 131 334 131 266 L131 146 C141 121 191 106 256 106Z" fill="url(#inner)"/>
+
+  <!-- Parent figure -->
+  <circle cx="226" cy="191" r="26" fill="#4A90D9"/>
+  <ellipse cx="226" cy="251" rx="30" ry="40" fill="#4A90D9"/>
+
+  <!-- Child figure -->
+  <circle cx="291" cy="226" r="20" fill="#F5A623"/>
+  <ellipse cx="291" cy="276" rx="22" ry="32" fill="#F5A623"/>
+
+  <!-- Protective arm -->
+  <path d="M240 200 Q280 170 310 210" stroke="#4A90D9" stroke-width="10" fill="none" stroke-linecap="round"/>
+
+  <!-- Heart -->
+  <path d="M261 351 C241 338 241 321 261 329 C281 321 281 338 261 351Z" fill="#E74C3C"/>
+
+  <!-- Small check mark -->
+  <path d="M245 355 L255 365 L275 340" stroke="white" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+</svg>

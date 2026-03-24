@@ -13,12 +13,17 @@
       "url": "https://u.expo.dev/5266290a-3a64-4881-af30-52167f38801a"
     },
     "android": {
-      "package": "com.onplay00.safekids"
+      "package": "com.onplay00.safekids",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBczns0ypIislopg9lKS71rK3ICZHp2Sjc"
+        }
+      }
     },
     "ios": {
       "bundleIdentifier": "com.onplay00.safekids"
     },
-    "plugins": ["expo-router", "expo-dev-client", "./modules/expo-usage-stats", "expo-notifications"],
+    "plugins": ["expo-router", "./modules/expo-usage-stats/app.plugin.js", "expo-notifications"],
     "experiments": {
       "typedRoutes": true
     },

@@ -48,7 +48,7 @@ export default function ChildSOS() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <Text style={s.title}>Emergency</Text>
+      <Text style={s.title}>긴급 알림</Text>
       <Text style={s.subtitle}>3초 길게 눌러서 부모님께 알림 전송</Text>
 
       <View style={s.sosArea}>
@@ -61,7 +61,7 @@ export default function ChildSOS() {
           {sending ? (
             <ActivityIndicator size="large" color={Colors.danger} />
           ) : sent ? (
-            <Text style={[s.sosText, { color: Colors.safe }]}>SENT</Text>
+            <Text style={[s.sosText, { color: Colors.safe }]}>전송됨</Text>
           ) : (
             <Text style={s.sosText}>SOS</Text>
           )}
@@ -100,7 +100,7 @@ export default function ChildSOS() {
       </View>
 
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-        <Text style={s.logoutText}>Sign out</Text>
+        <Text style={s.logoutText}>로그아웃</Text>
       </TouchableOpacity>
     </ScrollView>
   );

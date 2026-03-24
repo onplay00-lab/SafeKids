@@ -10,6 +10,13 @@ import { addPromise, deletePromise, subscribePromises } from '../../src/services
 
 function generateCode() { return Math.random().toString(36).substring(2,8).toUpperCase(); }
 
+// 자녀 이름 Firestore에 저장
+async function saveChildName(familyId, childUid, name) {
+  await updateDoc(doc(db, 'families', familyId), {
+    [`childNames.${childUid}`]: name,
+  });
+}
+
 const NOTIF_ITEMS = [
   { key: 'geofence',    label: '지오펜스 알림',  desc: '자녀 안전 구역 진입/이탈' },
   { key: 'sos',         label: 'SOS 알림',       desc: '자녀 긴급 신호' },
@@ -28,6 +35,39 @@ export default function ParentSettings() {
   const [promises, setPromises] = useState([]);
   const [newPromiseText, setNewPromiseText] = useState('');
   const [showAddInput, setShowAddInput] = useState(false);
+  const [childList, setChildList] = useState([]);
+  const [childNames, setChildNames] = useState({});
+  const [editingChild, setEditingChild] = useState(null);
+  const [editName, setEditName] = useState('');
+
+  // 자녀 목록 및 이름 로드
+  useEffect(() => {
+    if (!familyId) return;
+    async function load() {
+      const famDoc = await getDoc(doc(db, 'families', familyId));
+      if (!famDoc.exists()) return;
+      const data = famDoc.data();
+      const childUids = data.children || [];
+      const names = data.childNames || {};
+      setChildNames(names);
+      const list = await Promise.all(childUids.map(async (uid) => {
+        const userDoc = await getDoc(doc(db, 'users', uid));
+        const email = userDoc.exists() ? userDoc.data().email : '';
+        return { uid, email, defaultName: email?.split('@')[0] || uid };
+      }));
+      setChildList(list);
+    }
+    load();
+  }, [familyId]);
+
+  async function handleSaveChildName(uid) {
+    const name = editName.trim();
+    if (!name) return;
+    await saveChildName(familyId, uid, name);
+    setChildNames((prev) => ({ ...prev, [uid]: name }));
+    setEditingChild(null);
+    setEditName('');
+  }
 
   // 약속 목록 구독
   useEffect(() => {
@@ -113,7 +153,7 @@ export default function ParentSettings() {
       }
     } catch (e) {
       console.error(e);
-      Alert.alert('Error', 'Failed to get invite code');
+      Alert.alert('오류', '초대 코드 생성에 실패했습니다');
     }
     setLoading(false);
   }
@@ -125,27 +165,68 @@ export default function ParentSettings() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <Text style={s.title}>Settings</Text>
+      <Text style={s.title}>설정</Text>
       <View style={s.profile}>
         <View style={s.profileAvatar}><Text style={s.profileAvatarText}>P</Text></View>
-        <Text style={s.profileName}>Parent account</Text>
+        <Text style={s.profileName}>부모 계정</Text>
         <Text style={s.profileEmail}>{user?.email || ''}</Text>
       </View>
 
-      <Text style={s.section}>Invite code</Text>
+      <Text style={s.section}>초대 코드</Text>
       {inviteCode ? (
         <View style={s.codeBox}>
-          <Text style={s.codeLabel}>Share this code with your child</Text>
+          <Text style={s.codeLabel}>이 코드를 자녀에게 알려주세요</Text>
           <Text style={s.codeText}>{inviteCode}</Text>
-          <Text style={s.codeHint}>Child enters this on Family Connect screen</Text>
+          <Text style={s.codeHint}>자녀가 가족 연결 화면에서 이 코드를 입력합니다</Text>
         </View>
       ) : (
         <TouchableOpacity style={s.addBtn} onPress={handleShowInviteCode} disabled={loading}>
-          {loading ? <ActivityIndicator color={Colors.primary} /> : <Text style={s.addBtnText}>+ Add child (invite code)</Text>}
+          {loading ? <ActivityIndicator color={Colors.primary} /> : <Text style={s.addBtnText}>+ 자녀 추가 (초대 코드)</Text>}
         </TouchableOpacity>
       )}
 
-      <Text style={[s.section, {marginTop:24}]}>Family promise</Text>
+      {/* 자녀 관리 */}
+      {childList.length > 0 && (
+        <>
+          <Text style={[s.section, {marginTop:24}]}>자녀 관리</Text>
+          <View style={s.card}>
+            {childList.map((child, i) => (
+              <View key={child.uid} style={[s.childRow, i < childList.length - 1 && s.settingRowBorder]}>
+                {editingChild === child.uid ? (
+                  <View style={s.editRow}>
+                    <TextInput
+                      style={s.editInput}
+                      value={editName}
+                      onChangeText={setEditName}
+                      placeholder="이름 입력"
+                      placeholderTextColor={Colors.textHint}
+                      autoFocus
+                      onSubmitEditing={() => handleSaveChildName(child.uid)}
+                    />
+                    <TouchableOpacity style={s.editSaveBtn} onPress={() => handleSaveChildName(child.uid)}>
+                      <Text style={s.editSaveBtnText}>저장</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { setEditingChild(null); setEditName(''); }}>
+                      <Text style={s.addCancelText}>취소</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={s.childInfo}
+                    onPress={() => { setEditingChild(child.uid); setEditName(childNames[child.uid] || child.defaultName); }}
+                  >
+                    <Text style={s.childName}>{childNames[child.uid] || child.defaultName}</Text>
+                    <Text style={s.childEmail}>{child.email}</Text>
+                    <Text style={s.childEditHint}>탭하여 이름 변경</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+
+      <Text style={[s.section, {marginTop:24}]}>가족 약속</Text>
       <View style={s.card}>
         {promises.length === 0 && !showAddInput && (
           <Text style={s.emptyHint}>아직 약속이 없어요. 추가해보세요!</Text>
@@ -205,7 +286,7 @@ export default function ParentSettings() {
       </View>
 
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-        <Text style={s.logoutText}>Sign out</Text>
+        <Text style={s.logoutText}>로그아웃</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -248,6 +329,15 @@ const s = StyleSheet.create({
   toggleOn:         { backgroundColor: Colors.primary },
   toggleThumb:      { width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.white },
   toggleThumbOn:    { transform: [{ translateX: 20 }] },
+  childRow:         { paddingVertical: 12 },
+  childInfo:        { },
+  childName:        { fontSize: 15, fontWeight: '600', color: Colors.textPrimary },
+  childEmail:       { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  childEditHint:    { fontSize: 11, color: Colors.primary, marginTop: 4 },
+  editRow:          { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  editInput:        { flex: 1, backgroundColor: Colors.white, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: Colors.textPrimary, borderWidth: 1, borderColor: Colors.border },
+  editSaveBtn:      { backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  editSaveBtnText:  { fontSize: 13, fontWeight: '600', color: Colors.white },
   logoutBtn:        { alignItems: 'center', paddingVertical: 14, marginTop: 32, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
   logoutText:       { fontSize: 14, color: Colors.danger },
 });

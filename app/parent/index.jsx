@@ -13,7 +13,7 @@ const CHILD_COLORS = [
   { color: '#EAF3DE', textColor: '#27500A' },
 ];
 
-function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}h ${mm}m` : `${mm}m`; }
+function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}시간 ${mm}분` : `${mm}분`; }
 
 function timeAgo(date) {
   const diff = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -85,10 +85,10 @@ export default function ParentHome() {
         return (
           <TouchableOpacity key={c.uid} style={s.childCard}>
             <View style={[s.avatar, { backgroundColor: c.color }]}><Text style={[s.avatarText, { color: c.textColor }]}>{c.initials}</Text></View>
-            <View style={s.childInfo}><Text style={s.childName}>{c.name}</Text><Text style={s.childLoc}>{sd ? `Screen ${fmt(sd.dailyUsage || 0)}` : 'No data'}</Text></View>
+            <View style={s.childInfo}><Text style={s.childName}>{c.name}</Text><Text style={s.childLoc}>{sd ? `사용 ${fmt(sd.dailyUsage || 0)}` : '데이터 없음'}</Text></View>
             <View style={[s.badge, { backgroundColor: hasSOS ? Colors.dangerBg : Colors.safeBg }]}>
               <Text style={[s.badgeText, { color: hasSOS ? Colors.danger : Colors.safe }]}>
-                {hasSOS ? 'SOS!' : 'Safe'}
+                {hasSOS ? 'SOS!' : '안전'}
               </Text>
             </View>
           </TouchableOpacity>
@@ -96,7 +96,7 @@ export default function ParentHome() {
       })}
 
       <View style={s.card}>
-        <Text style={s.cardLabel}>Today screen time</Text>
+        <Text style={s.cardLabel}>오늘 사용 시간</Text>
         <View style={s.usageRow}>
           {children.map((c) => {
             const sd = screenMap[c.uid];
@@ -109,7 +109,7 @@ export default function ParentHome() {
                 <Text style={s.usageName}>{c.name}</Text>
                 <Text style={[s.usageTime, warn && { color: Colors.warn }]}>{fmt(usedMin)}</Text>
                 <View style={s.bar}><View style={[s.barFill, { width: `${Math.min(100, pct)}%`, backgroundColor: warn ? '#BA7517' : Colors.primary }]} /></View>
-                <Text style={s.usageLimit}>Limit {fmt(limitMin)}</Text>
+                <Text style={s.usageLimit}>제한 {fmt(limitMin)}</Text>
               </View>
             );
           })}
@@ -117,7 +117,7 @@ export default function ParentHome() {
       </View>
 
       <View style={s.card}>
-        <Text style={s.cardLabel}>Recent alerts</Text>
+        <Text style={s.cardLabel}>최근 알림</Text>
         {sosAlerts.length === 0 ? (
           <Text style={s.notiText}>알림 없음</Text>
         ) : (

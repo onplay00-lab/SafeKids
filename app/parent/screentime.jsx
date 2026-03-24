@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import { doc, getDoc, collection, query, onSnapshot, orderBy, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
-import { subscribeScreentime, updateAppLimit, updateDailyLimit } from '../../src/services/screentimeService';
+import { subscribeScreentime, updateAppLimit, updateDailyLimit, updateWeeklyLimits, updateSchedule } from '../../src/services/screentimeService';
 
-function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}h ${mm}m` : `${mm}m`; }
+function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}시간 ${mm}분` : `${mm}분`; }
+
+const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
 export default function ParentScreenTime() {
   const { familyId } = useAuth();
@@ -14,6 +16,13 @@ export default function ParentScreenTime() {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [screenData, setScreenData] = useState(null);
   const [requests, setRequests]     = useState([]);
+  const [showWeekly, setShowWeekly] = useState(false);
+  const [weeklyLimits, setWeeklyLimits] = useState(null);
+  const [schedule, setSchedule] = useState({
+    sleep: { start: '22:00', end: '07:00', enabled: true },
+    study: { start: '16:00', end: '18:00', enabled: true },
+  });
+  const [timePicker, setTimePicker] = useState(null); // { type: 'sleep'|'study', field: 'start'|'end' }
 
   // 가족 내 아이 목록 로드
   useEffect(() => {
@@ -21,8 +30,11 @@ export default function ParentScreenTime() {
     async function loadChildren() {
       const famDoc = await getDoc(doc(db, 'families', familyId));
       if (!famDoc.exists()) return;
-      const childUids = famDoc.data().children || [];
+      const data = famDoc.data();
+      const childUids = data.children || [];
+      const names = data.childNames || {};
       const list = await Promise.all(childUids.map(async (uid) => {
+        if (names[uid]) return { uid, name: names[uid] };
         const userDoc = await getDoc(doc(db, 'users', uid));
         return { uid, name: userDoc.exists() ? (userDoc.data().name || userDoc.data().email?.split('@')[0]) : uid };
       }));
@@ -36,7 +48,11 @@ export default function ParentScreenTime() {
     if (!familyId || children.length === 0) { setScreenData(null); return; }
     const child = children[selectedIdx];
     if (!child) return;
-    const unsub = subscribeScreentime(familyId, child.uid, (data) => setScreenData(data));
+    const unsub = subscribeScreentime(familyId, child.uid, (data) => {
+      setScreenData(data);
+      setWeeklyLimits(data?.weeklyLimits || null);
+      if (data?.schedule) setSchedule(data.schedule);
+    });
     return () => unsub();
   }, [familyId, children, selectedIdx]);
 
@@ -64,6 +80,37 @@ export default function ParentScreenTime() {
   const pendingForChild = requests.filter(
     (r) => r.childUid === selectedChild?.uid && r.status === 'pending'
   );
+
+  function handleWeeklyChange(day, delta) {
+    const current = weeklyLimits || {};
+    const val = current[day] !== undefined ? current[day] : dailyLimit;
+    const next = Math.max(30, Math.min(720, val + delta));
+    const updated = { ...current, [day]: next };
+    // 모든 요일 채우기
+    for (let i = 0; i < 7; i++) {
+      if (updated[i] === undefined) updated[i] = dailyLimit;
+    }
+    setWeeklyLimits(updated);
+    if (selectedChild) updateWeeklyLimits(familyId, selectedChild.uid, updated);
+  }
+
+  function handleDisableWeekly() {
+    setWeeklyLimits(null);
+    setShowWeekly(false);
+    if (selectedChild) {
+      // weeklyLimits를 null로 설정
+      const ref = doc(db, 'families', familyId, 'screentime', selectedChild.uid);
+      updateDoc(ref, { weeklyLimits: null });
+    }
+  }
+
+  function handleEnableWeekly() {
+    const limits = {};
+    for (let i = 0; i < 7; i++) limits[i] = dailyLimit;
+    setWeeklyLimits(limits);
+    setShowWeekly(true);
+    if (selectedChild) updateWeeklyLimits(familyId, selectedChild.uid, limits);
+  }
 
   function handleToggleLimit(appKey, app) {
     if (!familyId || children.length === 0) return;
@@ -105,7 +152,7 @@ export default function ParentScreenTime() {
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <View style={s.headerRow}>
-        <Text style={s.title}>Screen time</Text>
+        <Text style={s.title}>사용 시간</Text>
         <View style={s.tabs}>
           {children.map((c, i) => (
             <TouchableOpacity key={c.uid} style={i === selectedIdx ? s.tabActive : s.tab} onPress={() => setSelectedIdx(i)}>
@@ -146,6 +193,58 @@ export default function ParentScreenTime() {
         </View>
       </View>
 
+      {/* 요일별 시간 제한 */}
+      <View style={s.card}>
+        <View style={s.row}>
+          <Text style={s.cardLabel}>요일별 제한</Text>
+          <TouchableOpacity onPress={() => {
+            if (weeklyLimits) {
+              if (showWeekly) setShowWeekly(false);
+              else setShowWeekly(true);
+            } else {
+              handleEnableWeekly();
+            }
+          }}>
+            <Text style={s.weeklyToggle}>{weeklyLimits ? (showWeekly ? '접기' : '펼치기') : '+ 설정'}</Text>
+          </TouchableOpacity>
+        </View>
+        {weeklyLimits && showWeekly && (
+          <>
+            {DAY_LABELS.map((label, i) => {
+              const val = weeklyLimits[i] !== undefined ? weeklyLimits[i] : dailyLimit;
+              const isToday = new Date().getDay() === i;
+              return (
+                <View key={i} style={[s.weeklyRow, isToday && s.weeklyRowToday]}>
+                  <Text style={[s.weeklyDay, isToday && s.weeklyDayToday]}>{label}</Text>
+                  <View style={s.weeklyControls}>
+                    <TouchableOpacity style={s.weeklyBtn} onPress={() => handleWeeklyChange(i, -30)}>
+                      <Text style={s.weeklyBtnText}>-30</Text>
+                    </TouchableOpacity>
+                    <Text style={s.weeklyVal}>{fmt(val)}</Text>
+                    <TouchableOpacity style={s.weeklyBtn} onPress={() => handleWeeklyChange(i, 30)}>
+                      <Text style={s.weeklyBtnText}>+30</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+            <TouchableOpacity style={s.weeklyDisableBtn} onPress={handleDisableWeekly}>
+              <Text style={s.weeklyDisableText}>요일별 제한 해제 (기본 제한으로)</Text>
+            </TouchableOpacity>
+          </>
+        )}
+        {weeklyLimits && !showWeekly && (
+          <View style={s.weeklyPreview}>
+            {DAY_LABELS.map((label, i) => (
+              <View key={i} style={s.weeklyPreviewItem}>
+                <Text style={[s.weeklyPreviewDay, new Date().getDay() === i && s.weeklyDayToday]}>{label}</Text>
+                <Text style={s.weeklyPreviewVal}>{weeklyLimits[i] !== undefined ? `${Math.floor(weeklyLimits[i]/60)}h` : '-'}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
       {/* 추가 시간 요청 목록 */}
       {pendingForChild.length > 0 && (
         <>
@@ -172,14 +271,14 @@ export default function ParentScreenTime() {
         </>
       )}
 
-      <Text style={s.section}>App usage</Text>
+      <Text style={s.section}>앱 사용량</Text>
       {appEntries.map(([key, a]) => (
         <View key={key} style={s.appCard}>
           <View style={s.appRow}>
             <View style={[s.appIcon, { backgroundColor: a.color }]}><Text style={[s.appIconText, { color: a.tc }]}>{a.code}</Text></View>
             <View style={s.appInfo}>
               <Text style={s.appName}>{a.name}</Text>
-              <Text style={s.appTime}>{a.used}min{a.limit ? ` / ${a.limit}min` : ''}</Text>
+              <Text style={s.appTime}>{a.used}분{a.limit ? ` / ${a.limit}분` : ''}</Text>
             </View>
             {a.limit ? (
               <TouchableOpacity style={[s.toggle, s.toggleOn]} onPress={() => handleToggleLimit(key, a)}>
@@ -187,7 +286,7 @@ export default function ParentScreenTime() {
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={s.unlimit} onPress={() => handleToggleLimit(key, a)}>
-                <Text style={s.unlimitText}>No limit</Text>
+                <Text style={s.unlimitText}>제한 없음</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -217,11 +316,95 @@ export default function ParentScreenTime() {
         </View>
       ))}
 
-      <Text style={[s.section, { marginTop: 20 }]}>Schedule</Text>
+      <Text style={[s.section, { marginTop: 20 }]}>시간표</Text>
       <View style={s.card}>
-        <View style={s.schedRow}><Text style={s.schedName}>Sleep time</Text><Text style={s.schedTime}>22:00 - 07:00</Text></View>
-        <View style={[s.schedRow, { borderBottomWidth: 0 }]}><Text style={s.schedName}>Study time</Text><Text style={s.schedTime}>16:00 - 18:00</Text></View>
+        {/* 잠자는 시간 */}
+        <View style={s.schedRow}>
+          <View style={s.schedLeft}>
+            <Text style={s.schedName}>🌙 잠자는 시간</Text>
+            <TouchableOpacity onPress={() => {
+              const updated = { ...schedule, sleep: { ...schedule.sleep, enabled: !schedule.sleep.enabled } };
+              setSchedule(updated);
+              if (selectedChild) updateSchedule(familyId, selectedChild.uid, updated);
+            }}>
+              <Text style={s.schedToggle}>{schedule.sleep.enabled ? '켜짐' : '꺼짐'}</Text>
+            </TouchableOpacity>
+          </View>
+          {schedule.sleep.enabled && (
+            <View style={s.schedTimes}>
+              <TouchableOpacity style={s.schedTimeBtn} onPress={() => setTimePicker({ type: 'sleep', field: 'start' })}>
+                <Text style={s.schedTimeText}>{schedule.sleep.start}</Text>
+              </TouchableOpacity>
+              <Text style={s.schedDash}>~</Text>
+              <TouchableOpacity style={s.schedTimeBtn} onPress={() => setTimePicker({ type: 'sleep', field: 'end' })}>
+                <Text style={s.schedTimeText}>{schedule.sleep.end}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+        {/* 공부 시간 */}
+        <View style={[s.schedRow, { borderBottomWidth: 0 }]}>
+          <View style={s.schedLeft}>
+            <Text style={s.schedName}>📚 공부 시간</Text>
+            <TouchableOpacity onPress={() => {
+              const updated = { ...schedule, study: { ...schedule.study, enabled: !schedule.study.enabled } };
+              setSchedule(updated);
+              if (selectedChild) updateSchedule(familyId, selectedChild.uid, updated);
+            }}>
+              <Text style={s.schedToggle}>{schedule.study.enabled ? '켜짐' : '꺼짐'}</Text>
+            </TouchableOpacity>
+          </View>
+          {schedule.study.enabled && (
+            <View style={s.schedTimes}>
+              <TouchableOpacity style={s.schedTimeBtn} onPress={() => setTimePicker({ type: 'study', field: 'start' })}>
+                <Text style={s.schedTimeText}>{schedule.study.start}</Text>
+              </TouchableOpacity>
+              <Text style={s.schedDash}>~</Text>
+              <TouchableOpacity style={s.schedTimeBtn} onPress={() => setTimePicker({ type: 'study', field: 'end' })}>
+                <Text style={s.schedTimeText}>{schedule.study.end}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
+
+      {/* 시간 선택 모달 */}
+      {timePicker && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setTimePicker(null)}>
+          <View style={s.pickerOverlay}>
+            <View style={s.pickerCard}>
+              <Text style={s.pickerTitle}>
+                {timePicker.type === 'sleep' ? '잠자는 시간' : '공부 시간'} - {timePicker.field === 'start' ? '시작' : '종료'}
+              </Text>
+              <View style={s.pickerGrid}>
+                {Array.from({ length: 24 }, (_, h) => {
+                  const times = [`${String(h).padStart(2,'0')}:00`, `${String(h).padStart(2,'0')}:30`];
+                  return times.map(t => (
+                    <TouchableOpacity
+                      key={t}
+                      style={[s.pickerItem, schedule[timePicker.type][timePicker.field] === t && s.pickerItemActive]}
+                      onPress={() => {
+                        const updated = {
+                          ...schedule,
+                          [timePicker.type]: { ...schedule[timePicker.type], [timePicker.field]: t },
+                        };
+                        setSchedule(updated);
+                        if (selectedChild) updateSchedule(familyId, selectedChild.uid, updated);
+                        setTimePicker(null);
+                      }}
+                    >
+                      <Text style={[s.pickerItemText, schedule[timePicker.type][timePicker.field] === t && s.pickerItemTextActive]}>{t}</Text>
+                    </TouchableOpacity>
+                  ));
+                })}
+              </View>
+              <TouchableOpacity style={s.pickerClose} onPress={() => setTimePicker(null)}>
+                <Text style={s.pickerCloseText}>닫기</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </ScrollView>
   );
 }
@@ -260,9 +443,26 @@ const s = StyleSheet.create({
   appLimitBtn: { backgroundColor: Colors.primaryLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
   appLimitBtnText: { fontSize: 12, fontWeight: '600', color: Colors.primary },
   appLimitVal: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, minWidth: 44, textAlign: 'center' },
-  schedRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
+  schedRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
+  schedLeft:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
   schedName:   { fontSize: 13, color: Colors.textPrimary },
-  schedTime:   { fontSize: 13, color: Colors.textSecondary },
+  schedToggle: { fontSize: 11, color: Colors.primary, fontWeight: '500' },
+  schedTimes:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  schedTimeBtn:{ backgroundColor: Colors.primaryLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
+  schedTimeText:{ fontSize: 14, fontWeight: '600', color: Colors.primary },
+  schedDash:   { fontSize: 13, color: Colors.textSecondary },
+
+  // 시간 선택 모달
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  pickerCard:    { backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '85%', maxHeight: '70%' },
+  pickerTitle:   { fontSize: 16, fontWeight: '600', color: Colors.textPrimary, textAlign: 'center', marginBottom: 16 },
+  pickerGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
+  pickerItem:    { borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: Colors.bg, minWidth: 60, alignItems: 'center' },
+  pickerItemActive: { backgroundColor: Colors.primary },
+  pickerItemText:   { fontSize: 13, color: Colors.textPrimary },
+  pickerItemTextActive: { color: '#fff', fontWeight: '600' },
+  pickerClose:   { marginTop: 16, alignItems: 'center', paddingVertical: 10 },
+  pickerCloseText: { fontSize: 14, color: Colors.textSecondary },
 
   // 일일 제한 설정
   limitSection:{ marginTop: 14, borderTopWidth: 0.5, borderTopColor: Colors.border, paddingTop: 12 },
@@ -271,6 +471,23 @@ const s = StyleSheet.create({
   limitBtn:    { backgroundColor: Colors.primaryLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14 },
   limitBtnText:{ fontSize: 14, fontWeight: '600', color: Colors.primary },
   limitValue:  { fontSize: 18, fontWeight: '700', color: Colors.textPrimary, minWidth: 80, textAlign: 'center' },
+
+  // 요일별 제한
+  weeklyToggle:    { fontSize: 13, color: Colors.primary, fontWeight: '500' },
+  weeklyRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
+  weeklyRowToday:  { backgroundColor: Colors.primaryLight, borderRadius: 8, paddingHorizontal: 8, marginHorizontal: -8 },
+  weeklyDay:       { fontSize: 14, fontWeight: '500', color: Colors.textPrimary, width: 28 },
+  weeklyDayToday:  { color: Colors.primary, fontWeight: '700' },
+  weeklyControls:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  weeklyBtn:       { backgroundColor: Colors.primaryLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
+  weeklyBtnText:   { fontSize: 12, fontWeight: '600', color: Colors.primary },
+  weeklyVal:       { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, minWidth: 50, textAlign: 'center' },
+  weeklyDisableBtn:{ marginTop: 10, alignItems: 'center', paddingVertical: 8 },
+  weeklyDisableText:{ fontSize: 12, color: Colors.textHint },
+  weeklyPreview:   { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  weeklyPreviewItem:{ alignItems: 'center' },
+  weeklyPreviewDay:{ fontSize: 12, color: Colors.textSecondary, marginBottom: 2 },
+  weeklyPreviewVal:{ fontSize: 12, fontWeight: '600', color: Colors.textPrimary },
 
   // 요청 카드
   reqCard:     { backgroundColor: '#FFF8E1', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#FFD54F' },

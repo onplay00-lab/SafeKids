@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Platform, Modal, TextInput, KeyboardAvoidingView,
+  Platform, Modal, TextInput, KeyboardAvoidingView, AppState,
 } from 'react-native';
 import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
@@ -12,6 +12,7 @@ import {
   initScreentime, startUsageTracking, stopUsageTracking,
   subscribeMyScreentime, checkUsagePermission, requestUsagePermission,
 } from '../../src/services/screentimeService';
+import * as ExpoUsageStats from '../../modules/expo-usage-stats';
 
 function fmt(m) {
   const h = Math.floor(m / 60);
@@ -36,6 +37,62 @@ export default function ChildHome() {
   const [isCustom, setIsCustom] = useState(false);
   const [sending, setSending]   = useState(false);
   const [lastRequest, setLastRequest] = useState(null); // 가장 최근 요청 상태
+  const [needOverlayPerm, setNeedOverlayPerm] = useState(false);
+  const prevRemaining = useRef(null);
+
+  // 오버레이 권한 확인
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    async function checkOverlay() {
+      try {
+        const has = await ExpoUsageStats.checkOverlayPermission();
+        if (!has) setNeedOverlayPerm(true);
+      } catch (e) {}
+    }
+    checkOverlay();
+  }, []);
+
+  // 시간 초과 시 오버레이 잠금 표시 / 해제
+  useEffect(() => {
+    if (Platform.OS !== 'android' || screenData === null) return;
+    const usage = screenData?.dailyUsage || 0;
+    const limit = screenData?.dailyLimit || 240;
+    const rem = Math.max(0, limit - usage);
+
+    async function updateOverlay() {
+      try {
+        const hasOverlay = await ExpoUsageStats.checkOverlayPermission();
+        if (!hasOverlay) return;
+
+        if (rem <= 0) {
+          await ExpoUsageStats.showLockOverlay(
+            `부모님이 설정한 ${fmt(limit)}을 모두 사용했어요`
+          );
+        } else {
+          // 시간이 남아있으면 (추가 시간 승인 등) 오버레이 해제
+          const locked = await ExpoUsageStats.isLocked();
+          if (locked) {
+            await ExpoUsageStats.hideLockOverlay();
+          }
+        }
+      } catch (e) {}
+    }
+    updateOverlay();
+    prevRemaining.current = rem;
+  }, [screenData]);
+
+  // 앱이 포그라운드로 돌아올 때 오버레이 상태 재확인
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (state) => {
+      if (state === 'active' && Platform.OS === 'android') {
+        try {
+          const has = await ExpoUsageStats.checkOverlayPermission();
+          if (has) setNeedOverlayPerm(false);
+        } catch (e) {}
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   // 위치 추적
   useEffect(() => {
@@ -147,6 +204,23 @@ export default function ChildHome() {
         </View>
       )}
 
+      {/* 오버레이 권한 배너 */}
+      {needOverlayPerm && Platform.OS === 'android' && (
+        <View style={s.permBanner}>
+          <Text style={s.permTitle}>🔒 화면 잠금 권한이 필요해요</Text>
+          <Text style={s.permDesc}>
+            사용 시간 초과 시 화면 잠금을 위해{'\n'}'다른 앱 위에 표시' 권한을 허용해 주세요.
+          </Text>
+          <TouchableOpacity style={s.permBtn} onPress={async () => {
+            try {
+              await ExpoUsageStats.requestOverlayPermission();
+            } catch (e) {}
+          }}>
+            <Text style={s.permBtnText}>설정에서 허용하기</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* 측정 방식 뱃지 */}
       {trackingMode && (
         <View style={[s.modeBadge, trackingMode === 'native' ? s.modeNative : s.modeFallback]}>
@@ -195,6 +269,19 @@ export default function ChildHome() {
               </View>
             );
           })}
+        </View>
+      )}
+
+      {/* 오늘 사용한 앱 (전체) */}
+      {(screenData?.allAppsUsage || []).length > 0 && (
+        <View style={s.card}>
+          <Text style={s.cardTitle}>📱 오늘 사용한 앱</Text>
+          {screenData.allAppsUsage.map((app, i) => (
+            <View key={app.packageName} style={[s.allAppRow, i > 0 && { borderTopWidth: 0.5, borderTopColor: Colors.border }]}>
+              <Text style={s.allAppName}>{app.name}</Text>
+              <Text style={s.allAppTime}>{fmt(app.usedMinutes)}</Text>
+            </View>
+          ))}
         </View>
       )}
 
@@ -362,6 +449,10 @@ const s = StyleSheet.create({
   bar:         { height: 4, backgroundColor: Colors.border, borderRadius: 2, marginTop: 6 },
   barFill:     { height: 4, borderRadius: 2 },
   noLimit:     { fontSize: 11, color: Colors.textHint, marginTop: 4 },
+
+  allAppRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
+  allAppName:  { fontSize: 13, color: Colors.textPrimary, flex: 1 },
+  allAppTime:  { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
 
   bonusCard:           { backgroundColor: Colors.bg, borderRadius: 12, padding: 16 },
   bonusTitle:          { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>SafeKids Icon Generator</title>
+<style>
+  body { display: flex; flex-direction: column; align-items: center; padding: 40px; background: #f5f5f5; font-family: sans-serif; }
+  canvas { border: 1px solid #ccc; margin: 20px; }
+  button { padding: 12px 24px; font-size: 16px; cursor: pointer; background: #4A90D9; color: white; border: none; border-radius: 8px; }
+</style>
+</head>
+<body>
+<h2>SafeKids App Icon (512x512)</h2>
+<canvas id="icon" width="512" height="512"></canvas>
+<button onclick="download()">Download PNG</button>
+
+<script>
+const canvas = document.getElementById('icon');
+const ctx = canvas.getContext('2d');
+const W = 512;
+
+// Background - soft gradient
+const bg = ctx.createLinearGradient(0, 0, W, W);
+bg.addColorStop(0, '#4A90D9');
+bg.addColorStop(1, '#2E6BB5');
+ctx.fillStyle = bg;
+ctx.beginPath();
+ctx.roundRect(0, 0, W, W, 100);
+ctx.fill();
+
+// Shield shape
+ctx.save();
+ctx.translate(W/2, W/2 + 10);
+ctx.beginPath();
+ctx.moveTo(0, -170);
+ctx.bezierCurveTo(80, -170, 140, -150, 155, -120);
+ctx.lineTo(155, 20);
+ctx.bezierCurveTo(155, 100, 80, 155, 0, 185);
+ctx.bezierCurveTo(-80, 155, -155, 100, -155, 20);
+ctx.lineTo(-155, -120);
+ctx.bezierCurveTo(-140, -150, -80, -170, 0, -170);
+ctx.closePath();
+ctx.fillStyle = 'rgba(255,255,255,0.95)';
+ctx.fill();
+
+// Inner shield accent
+ctx.beginPath();
+ctx.moveTo(0, -140);
+ctx.bezierCurveTo(65, -140, 115, -125, 125, -100);
+ctx.lineTo(125, 10);
+ctx.bezierCurveTo(125, 78, 65, 125, 0, 150);
+ctx.bezierCurveTo(-65, 125, -125, 78, -125, 10);
+ctx.lineTo(-125, -100);
+ctx.bezierCurveTo(-115, -125, -65, -140, 0, -140);
+ctx.closePath();
+const innerGrad = ctx.createLinearGradient(0, -140, 0, 150);
+innerGrad.addColorStop(0, '#E8F4FD');
+innerGrad.addColorStop(1, '#D0E8F7');
+ctx.fillStyle = innerGrad;
+ctx.fill();
+
+// Parent figure (larger)
+ctx.fillStyle = '#4A90D9';
+// Head
+ctx.beginPath();
+ctx.arc(-30, -65, 26, 0, Math.PI * 2);
+ctx.fill();
+// Body
+ctx.beginPath();
+ctx.ellipse(-30, -5, 30, 40, 0, 0, Math.PI * 2);
+ctx.fill();
+
+// Child figure (smaller, tucked under parent)
+ctx.fillStyle = '#F5A623';
+// Head
+ctx.beginPath();
+ctx.arc(35, -30, 20, 0, Math.PI * 2);
+ctx.fill();
+// Body
+ctx.beginPath();
+ctx.ellipse(35, 20, 22, 32, 0, 0, Math.PI * 2);
+ctx.fill();
+
+// Protective arm arc (parent reaching over child)
+ctx.strokeStyle = '#4A90D9';
+ctx.lineWidth = 10;
+ctx.lineCap = 'round';
+ctx.beginPath();
+ctx.arc(5, -20, 65, -0.3, 1.2);
+ctx.stroke();
+
+// Heart
+ctx.fillStyle = '#E74C3C';
+const hx = 5, hy = 85;
+ctx.beginPath();
+ctx.moveTo(hx, hy + 8);
+ctx.bezierCurveTo(hx - 20, hy - 5, hx - 20, hy - 22, hx, hy - 14);
+ctx.bezierCurveTo(hx + 20, hy - 22, hx + 20, hy - 5, hx, hy + 8);
+ctx.fill();
+
+ctx.restore();
+
+function download() {
+  const link = document.createElement('a');
+  link.download = 'safekids-icon-512.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+</script>
+</body>
+</html>

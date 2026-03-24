@@ -94,12 +94,23 @@ export async function initScreentime() {
       };
     }
 
+    // 요일별 제한이 설정되어 있으면 오늘 요일에 맞는 제한 사용
+    let todayLimit = prevData.dailyLimit || DEFAULT_DAILY_LIMIT;
+    const weeklyLimits = prevData.weeklyLimits;
+    if (weeklyLimits) {
+      const dayOfWeek = new Date().getDay(); // 0=일, 1=월, ..., 6=토
+      if (weeklyLimits[dayOfWeek] !== undefined) {
+        todayLimit = weeklyLimits[dayOfWeek];
+      }
+    }
+
     await setDoc(ref, {
       dailyUsage: 0,
       dailyUsageSeconds: 0,
-      dailyLimit: prevData.dailyLimit || DEFAULT_DAILY_LIMIT,
+      dailyLimit: todayLimit,
       date: today,
       apps,
+      weeklyLimits: prevData.weeklyLimits || null,
       lastActiveAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -130,16 +141,25 @@ async function syncFromNative() {
 
   // 앱별 집계 (ms → 초)
   const appSeconds = {};
+  const allAppSeconds = {}; // 모든 앱 (매핑 안 된 것 포함)
   let totalSeconds = 0;
 
   for (const stat of rawStats) {
     const sec = Math.floor(stat.totalTimeInForeground / 1000);
+    if (sec < 60) continue; // 1분 미만은 무시
     totalSeconds += sec;
 
     const key = PACKAGE_MAP[stat.packageName];
     if (key) {
       appSeconds[key] = (appSeconds[key] || 0) + sec;
     }
+    // 패키지명에서 앱 이름 추출 (com.google.android.youtube → youtube)
+    const parts = stat.packageName.split('.');
+    const shortName = parts[parts.length - 1];
+    allAppSeconds[stat.packageName] = {
+      seconds: sec,
+      shortName,
+    };
   }
 
   // 앱별 데이터 업데이트
@@ -153,11 +173,25 @@ async function syncFromNative() {
     };
   }
 
+  // 상위 10개 앱 (DEFAULT_APPS에 없는 것)
+  const topOther = Object.entries(allAppSeconds)
+    .filter(([pkg]) => !PACKAGE_MAP[pkg])
+    .sort((a, b) => b[1].seconds - a[1].seconds)
+    .slice(0, 10);
+
+  const allAppsUsage = topOther.map(([pkg, info]) => ({
+    packageName: pkg,
+    name: info.shortName,
+    usedSeconds: info.seconds,
+    usedMinutes: Math.floor(info.seconds / 60),
+  }));
+
   try {
     await setDoc(ref, {
       dailyUsageSeconds: totalSeconds,
       dailyUsage: Math.floor(totalSeconds / 60),
       apps,
+      allAppsUsage,
       lastActiveAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     }, { merge: true });
@@ -320,6 +354,21 @@ export async function updateDailyLimit(familyId, childUid, limit) {
 }
 
 // ============================================
+// 9-1) 부모: 요일별 제한시간 설정
+// weeklyLimits: { 0: 120, 1: 240, ..., 6: 180 } (0=일, 1=월, ..., 6=토)
+// ============================================
+export async function updateWeeklyLimits(familyId, childUid, weeklyLimits) {
+  await setDoc(getRef(familyId, childUid), { weeklyLimits, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// 요일별 제한 구독
+export function subscribeWeeklyLimits(familyId, childUid, callback) {
+  return onSnapshot(getRef(familyId, childUid), (snap) => {
+    callback(snap.exists() ? (snap.data().weeklyLimits || null) : null);
+  });
+}
+
+// ============================================
 // 10) 부모: 앱별 제한시간 변경
 // ============================================
 export async function updateAppLimit(familyId, childUid, appKey, limit) {
@@ -331,6 +380,13 @@ export async function updateAppLimit(familyId, childUid, appKey, limit) {
     apps[appKey] = { ...apps[appKey], limit };
     await setDoc(ref, { apps, updatedAt: serverTimestamp() }, { merge: true });
   }
+}
+
+// ============================================
+// 11) 부모: 스케줄(잠자는 시간, 공부 시간) 설정
+// ============================================
+export async function updateSchedule(familyId, childUid, schedule) {
+  await setDoc(getRef(familyId, childUid), { schedule, updatedAt: serverTimestamp() }, { merge: true });
 }
 
 export { DEFAULT_APPS, PACKAGE_MAP };

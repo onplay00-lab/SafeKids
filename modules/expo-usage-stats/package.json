@@ -2,7 +2,10 @@
   "name": "expo-usage-stats",
   "version": "1.0.0",
   "description": "Expo module for Android Usage Stats",
-  "main": "app.plugin.js",
+  "main": "index.ts",
+  "expo": {
+    "configPlugin": "./app.plugin.js"
+  },
   "files": [
     "android",
     "app.plugin.js",

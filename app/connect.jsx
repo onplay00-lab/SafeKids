@@ -23,26 +23,26 @@ export default function FamilyConnect() {
       await updateDoc(doc(db, "users", user.uid), { familyId });
       setGeneratedCode(inviteCode);
       setFamilyId(familyId);
-    } catch (e) { Alert.alert("Error", "Failed to generate code"); }
+    } catch (e) { Alert.alert("오류", "코드 생성에 실패했습니다"); }
     setLoading(false);
   }
 
   async function handleJoin() {
-    if (!code || code.length < 6) { Alert.alert("Error", "Enter 6-character code"); return; }
+    if (!code || code.length < 6) { Alert.alert("오류", "6자리 코드를 입력하세요"); return; }
     setLoading(true);
     try {
       const q = query(collection(db, "families"), where("inviteCode", "==", code.toUpperCase()));
       const snap = await getDocs(q);
-      if (snap.empty) { Alert.alert("Error", "Invalid code"); setLoading(false); return; }
+      if (snap.empty) { Alert.alert("오류", "유효하지 않은 코드입니다"); setLoading(false); return; }
       const fDoc = snap.docs[0];
       const fData = fDoc.data();
       const familyId = fDoc.id;
       await updateDoc(doc(db, "families", familyId), { children: [...(fData.children||[]), user.uid] });
       await updateDoc(doc(db, "users", user.uid), { familyId });
       setFamilyId(familyId);
-      Alert.alert("Connected!", "Family connected successfully.");
+      Alert.alert("연결 완료!", "가족이 성공적으로 연결되었습니다.");
       router.replace("/child");
-    } catch (e) { Alert.alert("Error", "Failed to join"); }
+    } catch (e) { Alert.alert("오류", "연결에 실패했습니다"); }
     setLoading(false);
   }
 
@@ -52,32 +52,32 @@ export default function FamilyConnect() {
         <View style={[s.logoCircle, role==="child" && {backgroundColor:"#FAECE7"}]}>
           <Text style={[s.logoText, role==="child" && {color:"#993C1D"}]}>{role==="parent"?"P":"C"}</Text>
         </View>
-        <Text style={s.title}>Family connect</Text>
+        <Text style={s.title}>가족 연결</Text>
       </View>
       {role === "parent" ? (
         <View>
-          <Text style={s.desc}>Generate a code and share it with your child.</Text>
+          <Text style={s.desc}>코드를 생성하여 자녀에게 공유하세요.</Text>
           {generatedCode ? (
             <View style={s.codeBox}>
-              <Text style={s.codeLabel}>Invite code</Text>
+              <Text style={s.codeLabel}>초대 코드</Text>
               <Text style={s.codeText}>{generatedCode}</Text>
-              <Text style={s.codeHint}>Share this with your child</Text>
+              <Text style={s.codeHint}>이 코드를 자녀에게 알려주세요</Text>
               <TouchableOpacity style={s.mainBtn} onPress={() => router.replace("/parent")}>
-                <Text style={s.mainBtnText}>Go to home</Text>
+                <Text style={s.mainBtnText}>홈으로 이동</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity style={s.mainBtn} onPress={handleGenerate} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff"/> : <Text style={s.mainBtnText}>Generate code</Text>}
+              {loading ? <ActivityIndicator color="#fff"/> : <Text style={s.mainBtnText}>코드 생성</Text>}
             </TouchableOpacity>
           )}
         </View>
       ) : (
         <View>
-          <Text style={s.desc}>Enter the code from your parent.</Text>
+          <Text style={s.desc}>부모님에게 받은 코드를 입력하세요.</Text>
           <TextInput style={s.codeInput} placeholder="ABC123" value={code} onChangeText={t=>setCode(t.toUpperCase())} maxLength={6} autoCapitalize="characters" placeholderTextColor="#9B9B9B"/>
           <TouchableOpacity style={[s.mainBtn,{backgroundColor:"#993C1D"}]} onPress={handleJoin} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff"/> : <Text style={s.mainBtnText}>Connect</Text>}
+            {loading ? <ActivityIndicator color="#fff"/> : <Text style={s.mainBtnText}>연결하기</Text>}
           </TouchableOpacity>
         </View>
       )}

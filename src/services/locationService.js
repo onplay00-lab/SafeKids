@@ -1,8 +1,9 @@
 import * as Location from 'expo-location';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../constants/firebase';
 import Constants from 'expo-constants';
 import { checkGeofences } from './geofenceService';
+import { getBatteryLevel, isCharging } from '../../modules/expo-usage-stats';
 
 const LOCATION_TASK = 'background-location-task';
 
@@ -46,16 +47,38 @@ async function saveLocation(location) {
   const familyId = userDoc.data().familyId;
   if (!familyId) return;
 
+  // 배터리 정보 가져오기
+  let battery = -1;
+  let charging = false;
+  try {
+    battery = await getBatteryLevel();
+    charging = await isCharging();
+  } catch (e) {}
+
   const locationRef = doc(db, 'families', familyId, 'locations', user.uid);
   await setDoc(locationRef, {
     latitude: location.coords.latitude,
     longitude: location.coords.longitude,
     accuracy: location.coords.accuracy,
+    battery,
+    charging,
     timestamp: new Date(location.timestamp),
     updatedAt: serverTimestamp(),
   }, { merge: true });
 
-  console.log('Location saved:', location.coords.latitude, location.coords.longitude);
+  // 이동 경로 기록 (하루 단위)
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  try {
+    await addDoc(collection(db, 'families', familyId, 'locationHistory', user.uid, today), {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      timestamp: new Date(location.timestamp),
+    });
+  } catch (e) {
+    console.log('경로 기록 실패:', e);
+  }
+
+  console.log('Location saved:', location.coords.latitude, location.coords.longitude, 'battery:', battery);
 
   // 지오펜스 진입/이탈 체크
   try {
