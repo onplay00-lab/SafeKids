@@ -1,0 +1,134 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================
+    // 헬퍼 함수
+    // ============================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isFamilyMember(familyId) {
+      let family = get(/databases/$(database)/documents/families/$(familyId)).data;
+      return isSignedIn() && (
+        family.parentId == request.auth.uid ||
+        request.auth.uid in family.children
+      );
+    }
+
+    function isFamilyParent(familyId) {
+      let family = get(/databases/$(database)/documents/families/$(familyId)).data;
+      return isSignedIn() && family.parentId == request.auth.uid;
+    }
+
+    // ============================================
+    // users/{uid}
+    // ============================================
+    match /users/{uid} {
+      // 본인만 읽기/쓰기, 같은 가족이면 읽기 허용
+      allow read: if isOwner(uid) || (
+        isSignedIn() &&
+        resource.data.familyId != null &&
+        isFamilyMember(resource.data.familyId)
+      );
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid);
+      allow delete: if false;
+    }
+
+    // ============================================
+    // families/{familyId}
+    // ============================================
+    match /families/{familyId} {
+      // 가족 구성원만 읽기
+      allow read: if isFamilyMember(familyId);
+      // 부모만 생성 (familyId == 본인 uid)
+      allow create: if isSignedIn() && familyId == request.auth.uid;
+      // 가족 구성원이면 업데이트 (자녀 참여 시)
+      allow update: if isFamilyMember(familyId);
+      allow delete: if false;
+
+      // --- locations ---
+      match /locations/{childUid} {
+        allow read: if isFamilyMember(familyId);
+        allow write: if isOwner(childUid) && isFamilyMember(familyId);
+      }
+
+      // --- screentime ---
+      match /screentime/{childUid} {
+        allow read: if isFamilyMember(familyId);
+        // 자녀 본인이 사용시간 기록, 부모가 제한 설정
+        allow write: if isFamilyMember(familyId) && (
+          isOwner(childUid) || isFamilyParent(familyId)
+        );
+      }
+
+      // --- geofences ---
+      match /geofences/{geofenceId} {
+        allow read: if isFamilyMember(familyId);
+        allow write: if isFamilyParent(familyId);
+      }
+
+      // --- geofenceStatus ---
+      match /geofenceStatus/{childUid} {
+        allow read: if isFamilyMember(familyId);
+        allow write: if isOwner(childUid) && isFamilyMember(familyId);
+      }
+
+      // --- geofenceAlerts ---
+      match /geofenceAlerts/{alertId} {
+        allow read: if isFamilyMember(familyId);
+        allow create: if isFamilyMember(familyId);
+        allow update, delete: if isFamilyParent(familyId);
+      }
+
+      // --- sos ---
+      match /sos/{sosId} {
+        allow read: if isFamilyMember(familyId);
+        // 자녀만 SOS 생성
+        allow create: if isSignedIn() && isFamilyMember(familyId);
+        // 부모만 resolved 처리
+        allow update: if isFamilyParent(familyId);
+        allow delete: if false;
+      }
+
+      // --- promises ---
+      match /promises/{promiseId} {
+        allow read: if isFamilyMember(familyId);
+        allow write: if isFamilyParent(familyId);
+      }
+
+      // --- promiseChecks ---
+      match /promiseChecks/{checkId} {
+        allow read: if isFamilyMember(familyId);
+        // 자녀 본인만 체크/체크해제
+        allow write: if isSignedIn() && isFamilyMember(familyId);
+      }
+
+      // --- timeRequests ---
+      match /timeRequests/{requestId} {
+        allow read: if isFamilyMember(familyId);
+        // 자녀가 요청 생성
+        allow create: if isSignedIn() && isFamilyMember(familyId);
+        // 부모가 승인/거절
+        allow update: if isFamilyParent(familyId);
+        allow delete: if false;
+      }
+    }
+
+    // 나머지 모든 문서 접근 차단
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

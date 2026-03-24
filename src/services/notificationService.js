@@ -50,40 +50,8 @@ export async function registerPushToken(uid) {
 }
 
 // ============================================
-// 2) Expo Push API로 알림 전송
-// ============================================
-export async function sendPushNotification({ token, title, body, data = {} }) {
-  if (!token) return;
-
-  const message = {
-    to: token,
-    sound: 'default',
-    title,
-    body,
-    data,
-    priority: 'high',
-  };
-
-  try {
-    const response = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-Encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(message),
-    });
-    const result = await response.json();
-    console.log('Push sent:', result);
-    return result;
-  } catch (e) {
-    console.error('Failed to send push notification:', e);
-  }
-}
-
-// ============================================
-// 3) 알림 리스너 설정 (앱 루트에서 호출)
+// 2) 알림 리스너 설정 (앱 루트에서 호출)
+// 푸시 알림 전송은 Firebase Cloud Functions에서 처리
 // ============================================
 export function setupNotificationListeners(onReceive, onResponse) {
   const receiveSub = Notifications.addNotificationReceivedListener(onReceive);

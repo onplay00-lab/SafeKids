@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, Linking, Alert, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import MapView, { Marker, Circle, Polyline } from 'react-native-maps';
+import { MapView, Marker, Circle, Polyline } from '../../constants/MapComponents';
 import { collection, onSnapshot, getDoc, doc, query, orderBy } from 'firebase/firestore';
 import { db, auth } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
@@ -16,7 +16,7 @@ import {
 async function reverseGeocode(lat, lng) {
   try {
     const res = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&language=ko&key=AIzaSyBczns0ypIislopg9lKS71rK3ICZHp2Sjc`
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&language=ko&key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`
     );
     const data = await res.json();
     if (data.results && data.results.length > 0) {
@@ -214,6 +214,24 @@ export default function ParentLocation() {
             <View style={s.centerBox}>
               <ActivityIndicator size="large" color={Colors.primary} />
               <Text style={s.loadingText}>위치 불러오는 중...</Text>
+            </View>
+          ) : selectedLoc?.latitude && Platform.OS === 'web' ? (
+            <View style={s.centerBox}>
+              <Text style={{ fontSize: 40, marginBottom: 8 }}>📍</Text>
+              <Text style={s.coordText}>
+                {selectedLoc.latitude?.toFixed(5)}, {selectedLoc.longitude?.toFixed(5)}
+              </Text>
+              <Text style={s.timeText}>
+                {selectedLoc.updatedAt
+                  ? new Date(selectedLoc.updatedAt.toDate()).toLocaleString('ko-KR')
+                  : ''}
+              </Text>
+              <TouchableOpacity
+                style={s.mapBtn}
+                onPress={() => openMap(selectedLoc.latitude, selectedLoc.longitude)}
+              >
+                <Text style={s.mapBtnText}>Google Maps에서 열기</Text>
+              </TouchableOpacity>
             </View>
           ) : selectedLoc?.latitude ? (
             <>

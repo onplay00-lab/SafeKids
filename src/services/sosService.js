@@ -1,10 +1,10 @@
 import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, getDoc, doc } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import { db, auth } from '../../constants/firebase';
-import { sendPushNotification } from './notificationService';
 
 // ============================================
 // 1) SOS 전송 (아이 → 부모)
+// Firestore에 저장하면 Cloud Functions가 자동으로 푸시 알림 전송
 // ============================================
 export async function sendSOS(familyId) {
   const user = auth.currentUser;
@@ -40,7 +40,7 @@ export async function sendSOS(familyId) {
     console.log('Location unavailable during SOS:', e);
   }
 
-  // Firestore families/{familyId}/sos 컬렉션에 저장
+  // Firestore에 저장 → Cloud Functions(onSOSCreated)가 푸시 전송
   const sosRef = collection(db, 'families', familyId, 'sos');
   const sosDoc = await addDoc(sosRef, {
     childUid: user.uid,
@@ -48,30 +48,6 @@ export async function sendSOS(familyId) {
     createdAt: serverTimestamp(),
     resolved: false,
   });
-
-  // 부모 푸시 토큰 가져와서 알림 전송
-  const famDoc = await getDoc(doc(db, 'families', familyId));
-  if (famDoc.exists()) {
-    const parentId = famDoc.data().parentId;
-    if (parentId) {
-      const parentDoc = await getDoc(doc(db, 'users', parentId));
-      if (parentDoc.exists()) {
-        const parentData = parentDoc.data();
-        const sosEnabled = parentData.notificationSettings?.sos ?? true;
-        if (sosEnabled) {
-          const childName = (await getDoc(doc(db, 'users', user.uid))).data()?.name || '자녀';
-          await sendPushNotification({
-            token: parentData.pushToken,
-            title: '🚨 SOS 알림',
-            body: locationData?.address
-              ? `${childName}이(가) 위험 신호를 보냈습니다! 위치: ${locationData.address}`
-              : `${childName}이(가) 위험 신호를 보냈습니다!`,
-            data: { type: 'sos', sosId: sosDoc.id, familyId },
-          });
-        }
-      }
-    }
-  }
 
   return sosDoc.id;
 }

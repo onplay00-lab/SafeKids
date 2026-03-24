@@ -3,7 +3,6 @@ import {
   onSnapshot, getDocs, getDoc, serverTimestamp, setDoc,
 } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
-import { sendPushNotification } from './notificationService';
 
 // 지오펜스 색상 팔레트
 const GEO_COLORS = ['#1D9E75', '#185FA5', '#BA7517', '#8B3FC8', '#C83F3F'];
@@ -108,35 +107,15 @@ export async function checkGeofences(familyId, childUid, latitude, longitude) {
   // 상태 저장
   await setDoc(statusRef, newStatus, { merge: true });
 
-  // 진입/이탈 발생 시 부모에게 알림
+  // 진입/이탈 발생 시 Firestore에 저장 → Cloud Functions(onGeofenceAlert)가 푸시 전송
   if (alerts.length > 0) {
-    const famDoc = await getDoc(doc(db, 'families', familyId));
-    const parentId = famDoc.exists() ? famDoc.data().parentId : null;
-    let parentToken = null;
     let childName = '자녀';
-
-    if (parentId) {
-      const parentDoc = await getDoc(doc(db, 'users', parentId));
-      if (parentDoc.exists()) {
-        const parentData = parentDoc.data();
-        const geofenceEnabled = parentData.notificationSettings?.geofence ?? true;
-        if (geofenceEnabled) parentToken = parentData.pushToken || null;
-      }
-    }
-
     const childDoc = await getDoc(doc(db, 'users', childUid));
     if (childDoc.exists()) {
       childName = childDoc.data().name || childDoc.data().email?.split('@')[0] || '자녀';
     }
 
     for (const { geo, type } of alerts) {
-      const isEnter = type === 'enter';
-      const title = isEnter ? `📍 ${geo.name} 도착` : `🚶 ${geo.name} 이탈`;
-      const body = isEnter
-        ? `${childName}이(가) ${geo.name}에 도착했습니다.`
-        : `${childName}이(가) ${geo.name}을(를) 벗어났습니다.`;
-
-      // Firestore alerts 저장
       await addDoc(collection(db, 'families', familyId, 'geofenceAlerts'), {
         childUid,
         childName,
@@ -145,16 +124,6 @@ export async function checkGeofences(familyId, childUid, latitude, longitude) {
         type,
         createdAt: serverTimestamp(),
       });
-
-      // 푸시 알림
-      if (parentToken) {
-        await sendPushNotification({
-          token: parentToken,
-          title,
-          body,
-          data: { type: 'geofence', geofenceId: geo.id, familyId },
-        });
-      }
     }
   }
 }
