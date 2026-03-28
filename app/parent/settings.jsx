@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, Alert,
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, auth } from '../../constants/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Colors } from '../../constants/Colors';
@@ -159,6 +160,11 @@ export default function ParentSettings() {
   }
 
   async function handleLogout() {
+    // 자동 로그인 정보 제거
+    await AsyncStorage.multiRemove([
+      'login_autoLogin',
+      'login_savedPassword',
+    ]);
     await signOut(auth);
     router.replace('/login');
   }
