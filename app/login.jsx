@@ -42,6 +42,11 @@ export default function LoginScreen() {
         }
 
         if (savedAutoLogin === "true" && savedEmail && savedPassword) {
+          // 현재 이미 로그인 상태면(signOut 직후 잔류) 자동 로그인 스킵
+          if (auth.currentUser) {
+            setInitializing(false);
+            return;
+          }
           setAutoLogin(true);
           setSaveEmail(true);
           setEmail(savedEmail);

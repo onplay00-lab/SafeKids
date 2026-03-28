@@ -191,13 +191,17 @@ export default function ParentSettings() {
   }
 
   async function handleLogout() {
-    // 자동 로그인 정보 제거
-    await AsyncStorage.multiRemove([
-      'login_autoLogin',
-      'login_savedPassword',
-    ]);
-    await signOut(auth);
-    router.replace('/login');
+    try {
+      // 자동 로그인 정보 제거 (signOut보다 먼저 실행)
+      await AsyncStorage.multiRemove([
+        'login_autoLogin',
+        'login_savedPassword',
+      ]);
+      await signOut(auth);
+      router.replace('/login');
+    } catch (e) {
+      Alert.alert('오류', '로그아웃에 실패했습니다');
+    }
   }
 
   return (

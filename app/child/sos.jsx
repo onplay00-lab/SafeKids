@@ -3,6 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, ActivityIn
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
@@ -23,6 +24,10 @@ export default function ChildSOS() {
   }, [familyId]);
 
   async function handleLogout() {
+    await AsyncStorage.multiRemove([
+      'login_autoLogin',
+      'login_savedPassword',
+    ]);
     await signOut(auth);
     router.replace('/login');
   }
