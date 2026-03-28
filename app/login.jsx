@@ -64,6 +64,7 @@ export default function LoginScreen() {
 
   async function doLogin(loginEmail, loginPassword) {
     try {
+      await AsyncStorage.removeItem("logged_out");
       const cred = await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
       const userDoc = await getDoc(doc(db, "users", cred.user.uid));
       if (userDoc.exists()) {
@@ -104,6 +105,7 @@ export default function LoginScreen() {
     if (!email || !password) { Alert.alert("Error", "이메일과 비밀번호를 입력하세요"); return; }
     setLoading(true);
     try {
+      await AsyncStorage.removeItem("logged_out");
       let cred;
       if (isSignUp) {
         cred = await createUserWithEmailAndPassword(auth, email, password);

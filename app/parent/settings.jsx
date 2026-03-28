@@ -192,11 +192,11 @@ export default function ParentSettings() {
 
   async function handleLogout() {
     try {
-      // 자동 로그인 정보 제거 (signOut보다 먼저 실행)
       await AsyncStorage.multiRemove([
         'login_autoLogin',
         'login_savedPassword',
       ]);
+      await AsyncStorage.setItem('logged_out', 'true');
       await signOut(auth);
       router.replace('/login');
     } catch (e) {

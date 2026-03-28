@@ -28,6 +28,7 @@ export default function ChildSOS() {
       'login_autoLogin',
       'login_savedPassword',
     ]);
+    await AsyncStorage.setItem('logged_out', 'true');
     await signOut(auth);
     router.replace('/login');
   }
