@@ -6,6 +6,12 @@
       "runtimeExecutable": "/Users/seongnw/.nvm/versions/node/v24.14.0/bin/node",
       "runtimeArgs": ["node_modules/expo/bin/cli", "start", "--web", "--port", "8081"],
       "port": 8081
+    },
+    {
+      "name": "mockup-server",
+      "runtimeExecutable": "/Users/seongnw/.nvm/versions/node/v24.14.0/bin/npx",
+      "runtimeArgs": ["http-server", "docs", "-p", "8090", "--cors"],
+      "port": 8090
     }
   ]
 }
