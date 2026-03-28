@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
 
@@ -11,6 +12,22 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true,
   }),
 });
+
+// Android 알림 채널 설정 (큰소리 신호용 최대 중요도)
+if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('loud-signal', {
+    name: '큰소리 신호',
+    importance: Notifications.AndroidImportance.MAX,
+    sound: 'default',
+    vibrationPattern: [0, 500, 250, 500, 250, 500],
+    bypassDnd: true,
+  });
+  Notifications.setNotificationChannelAsync('default', {
+    name: '일반 알림',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'default',
+  });
+}
 
 // ============================================
 // 1) 푸시 토큰 등록 및 Firestore 저장

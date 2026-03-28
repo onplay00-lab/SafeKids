@@ -45,14 +45,16 @@ export default function ParentSettings() {
   const [newContactName, setNewContactName] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
   const [showAddContact, setShowAddContact] = useState(false);
+  const [parentList, setParentList] = useState([]);
 
-  // 자녀 목록 및 이름 로드
+  // 자녀 + 부모 목록 로드
   useEffect(() => {
     if (!familyId) return;
     async function load() {
       const famDoc = await getDoc(doc(db, 'families', familyId));
       if (!famDoc.exists()) return;
       const data = famDoc.data();
+      // 자녀 목록
       const childUids = data.children || [];
       const names = data.childNames || {};
       setChildNames(names);
@@ -62,6 +64,14 @@ export default function ParentSettings() {
         return { uid, email, defaultName: email?.split('@')[0] || uid };
       }));
       setChildList(list);
+      // 부모 목록 (parentIds 배열 또는 레거시 parentId)
+      const parentIds = data.parentIds || (data.parentId ? [data.parentId] : []);
+      const parents = await Promise.all(parentIds.map(async (uid) => {
+        const userDoc = await getDoc(doc(db, 'users', uid));
+        const email = userDoc.exists() ? userDoc.data().email : '';
+        return { uid, email, isMe: uid === user.uid };
+      }));
+      setParentList(parents);
     }
     load();
   }, [familyId]);
@@ -174,7 +184,7 @@ export default function ParentSettings() {
         const code = generateCode();
         const newFamilyId = user.uid;
         await setDoc(doc(db, 'families', newFamilyId), {
-          parentId: user.uid,
+          parentIds: [user.uid],
           inviteCode: code,
           children: [],
           createdAt: new Date().toISOString(),
@@ -224,6 +234,23 @@ export default function ParentSettings() {
         <TouchableOpacity style={s.addBtn} onPress={handleShowInviteCode} disabled={loading}>
           {loading ? <ActivityIndicator color={Colors.primary} /> : <Text style={s.addBtnText}>+ 자녀 추가 (초대 코드)</Text>}
         </TouchableOpacity>
+      )}
+
+      {/* 부모 목록 */}
+      {parentList.length > 1 && (
+        <>
+          <Text style={[s.section, {marginTop:24}]}>부모 계정</Text>
+          <View style={s.card}>
+            {parentList.map((p, i) => (
+              <View key={p.uid} style={[s.childRow, i < parentList.length - 1 && s.settingRowBorder]}>
+                <View style={s.childInfo}>
+                  <Text style={s.childName}>{p.email?.split('@')[0] || '부모'}{p.isMe ? ' (나)' : ''}</Text>
+                  <Text style={s.childEmail}>{p.email}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </>
       )}
 
       {/* 자녀 관리 */}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { doc, getDoc, onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { doc, getDoc, onSnapshot, collection, query, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
@@ -129,6 +129,28 @@ export default function ParentHome() {
     return unsub;
   }, [familyId]);
 
+  async function handleLoudSignal(child) {
+    Alert.alert(
+      '📢 큰소리 신호',
+      `${child.name}에게 큰소리 알림을 보낼까요?\n무음 모드에서도 소리가 울립니다.`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '보내기', onPress: async () => {
+            try {
+              await addDoc(collection(db, 'families', familyId, 'loudSignals'), {
+                childUid: child.uid,
+                message: '부모님이 연락을 원해요!',
+                createdAt: serverTimestamp(),
+              });
+              Alert.alert('전송 완료', `${child.name}에게 큰소리 신호를 보냈습니다.`);
+            } catch (e) { Alert.alert('오류', '전송에 실패했습니다'); }
+          }
+        },
+      ]
+    );
+  }
+
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <Text style={s.title}>SafeKids</Text>
@@ -177,10 +199,15 @@ export default function ParentHome() {
                 )}
               </View>
             </View>
-            <View style={[s.badge, { backgroundColor: hasSOS ? Colors.dangerBg : lowBattery ? '#FFF3E0' : Colors.safeBg }]}>
-              <Text style={[s.badgeText, { color: hasSOS ? Colors.danger : lowBattery ? '#E65100' : Colors.safe }]}>
-                {hasSOS ? 'SOS!' : lowBattery ? '저전력' : '안전'}
-              </Text>
+            <View style={s.cardActions}>
+              <TouchableOpacity style={s.loudBtn} onPress={() => handleLoudSignal(c)}>
+                <Text style={s.loudBtnText}>📢</Text>
+              </TouchableOpacity>
+              <View style={[s.badge, { backgroundColor: hasSOS ? Colors.dangerBg : lowBattery ? '#FFF3E0' : Colors.safeBg }]}>
+                <Text style={[s.badgeText, { color: hasSOS ? Colors.danger : lowBattery ? '#E65100' : Colors.safe }]}>
+                  {hasSOS ? 'SOS!' : lowBattery ? '저전력' : '안전'}
+                </Text>
+              </View>
             </View>
           </TouchableOpacity>
         );
@@ -274,6 +301,9 @@ const s = StyleSheet.create({
   childLoc: { fontSize: 12, color: Colors.textSecondary },
   batteryText: { fontSize: 12, color: Colors.safe, fontWeight: '500' },
   batteryLow: { color: '#E65100' },
+  cardActions: { alignItems: 'center', gap: 6 },
+  loudBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF3E0', alignItems: 'center', justifyContent: 'center' },
+  loudBtnText: { fontSize: 16 },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   badgeText: { fontSize: 12, fontWeight: '500' },
   card: { backgroundColor: Colors.bg, borderRadius: 12, padding: 14, marginTop: 12 },

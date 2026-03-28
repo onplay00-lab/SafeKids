@@ -15,12 +15,14 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "credentialsSource": "remote",
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
-      "channel": "production"
+      "channel": "production",
+      "credentialsSource": "remote"
     }
   },
   "submit": {

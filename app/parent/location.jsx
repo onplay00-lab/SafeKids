@@ -9,7 +9,7 @@ import { db, auth } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import {
-  subscribeGeofences, addGeofence, toggleGeofence, deleteGeofence,
+  subscribeGeofences, addGeofence, toggleGeofence, deleteGeofence, updateGeofenceNotify,
 } from '../../src/services/geofenceService';
 
 // 역지오코딩: 좌표 → 주소
@@ -373,23 +373,40 @@ export default function ParentLocation() {
           <Text style={s.emptyText}>등록된 안전 구역이 없습니다</Text>
         )}
         {geofences.map((g) => (
-          <TouchableOpacity
-            key={g.id}
-            style={s.geoRow}
-            onLongPress={() => handleDelete(g)}
-            activeOpacity={0.7}
-          >
-            <View style={[s.geoDot, { backgroundColor: g.color || Colors.primary }]} />
-            <View style={s.geoInfo}>
-              <Text style={s.geoName}>{g.name}</Text>
-              <Text style={s.geoRadius}>반경 {g.radius}m</Text>
-            </View>
-            <TouchableOpacity onPress={() => handleToggle(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <View style={[s.toggle, g.enabled && s.toggleOn]}>
-                <View style={[s.toggleThumb, g.enabled && s.toggleThumbOn]} />
+          <View key={g.id} style={s.geoCard}>
+            <TouchableOpacity
+              style={s.geoRow}
+              onLongPress={() => handleDelete(g)}
+              activeOpacity={0.7}
+            >
+              <View style={[s.geoDot, { backgroundColor: g.color || Colors.primary }]} />
+              <View style={s.geoInfo}>
+                <Text style={s.geoName}>{g.name}</Text>
+                <Text style={s.geoRadius}>반경 {g.radius}m</Text>
               </View>
+              <TouchableOpacity onPress={() => handleToggle(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <View style={[s.toggle, g.enabled && s.toggleOn]}>
+                  <View style={[s.toggleThumb, g.enabled && s.toggleThumbOn]} />
+                </View>
+              </TouchableOpacity>
             </TouchableOpacity>
-          </TouchableOpacity>
+            {g.enabled && (
+              <View style={s.geoNotifyRow}>
+                <TouchableOpacity
+                  style={[s.geoNotifyBtn, g.notifyOnEnter !== false && s.geoNotifyBtnActive]}
+                  onPress={() => updateGeofenceNotify(familyId, g.id, { notifyOnEnter: g.notifyOnEnter === false, notifyOnExit: g.notifyOnExit !== false })}
+                >
+                  <Text style={[s.geoNotifyText, g.notifyOnEnter !== false && s.geoNotifyTextActive]}>도착 알림</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.geoNotifyBtn, g.notifyOnExit !== false && s.geoNotifyBtnActive]}
+                  onPress={() => updateGeofenceNotify(familyId, g.id, { notifyOnEnter: g.notifyOnEnter !== false, notifyOnExit: g.notifyOnExit === false })}
+                >
+                  <Text style={[s.geoNotifyText, g.notifyOnExit !== false && s.geoNotifyTextActive]}>이탈 알림</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         ))}
         {geofences.length > 0 && (
           <Text style={s.deleteTip}>길게 눌러서 삭제</Text>
@@ -515,7 +532,13 @@ const s = StyleSheet.create({
   tapHint: { fontSize: 11, color: Colors.primary, marginTop: 6 },
   section: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 10, marginTop: 8 },
   emptyText: { fontSize: 13, color: Colors.textHint, marginBottom: 12 },
-  geoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
+  geoCard: { borderBottomWidth: 0.5, borderBottomColor: Colors.border, paddingBottom: 4 },
+  geoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
+  geoNotifyRow: { flexDirection: 'row', gap: 8, paddingBottom: 8, paddingLeft: 22 },
+  geoNotifyBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border },
+  geoNotifyBtnActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
+  geoNotifyText: { fontSize: 11, color: Colors.textHint },
+  geoNotifyTextActive: { color: Colors.primary, fontWeight: '500' },
   geoDot: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
   geoInfo: { flex: 1 },
   geoName: { fontSize: 14, color: Colors.textPrimary },

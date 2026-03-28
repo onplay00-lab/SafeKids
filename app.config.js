@@ -17,6 +17,7 @@ export default {
     plugins: [
       ...(config.plugins || []),
       "./plugins/disable-lint",
+      "./plugins/google-maps-api-key",
     ],
   },
 };

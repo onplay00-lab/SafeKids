@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.onplay00.safekidsapp",
-      "versionCode": 1
+      "versionCode": 3
     },
     "ios": {
       "bundleIdentifier": "com.onplay00.safekids"

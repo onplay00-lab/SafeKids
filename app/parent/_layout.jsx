@@ -37,6 +37,7 @@ export default function ParentLayout() {
       <Tabs.Screen name="index" options={{title:'홈', tabBarIcon:({focused}) => <TabIcon icon="🏠" focused={focused}/>}} />
       <Tabs.Screen name="location" options={{title:'위치', tabBarIcon:({focused}) => <TabIcon icon="📍" focused={focused}/>}} />
       <Tabs.Screen name="screentime" options={{title:'시간', tabBarIcon:({focused}) => <TabIcon icon="⏰" focused={focused}/>}} />
+      <Tabs.Screen name="chat" options={{title:'채팅', tabBarIcon:({focused}) => <TabIcon icon="💬" focused={focused}/>}} />
       <Tabs.Screen name="settings" options={{title:'설정', tabBarIcon:({focused}) => <TabIcon icon="⚙️" focused={focused}/>}} />
     </Tabs>
   );

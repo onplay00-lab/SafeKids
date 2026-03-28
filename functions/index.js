@@ -36,21 +36,25 @@ async function sendExpoPush({ token, title, body, data = {} }) {
 }
 
 // ============================================
-// 부모 토큰 + 자녀 이름 가져오기 헬퍼
+// 모든 부모 토큰 + 자녀 이름 가져오기 헬퍼
 // ============================================
-async function getParentTokenAndChildName(familyId, childUid) {
+async function getParentTokensAndChildName(familyId, childUid) {
   const famSnap = await db.doc(`families/${familyId}`).get();
-  if (!famSnap.exists) return { token: null, childName: "자녀" };
+  if (!famSnap.exists) return { parents: [], childName: "자녀" };
 
-  const parentId = famSnap.data().parentId;
-  let token = null;
-  let notifSettings = {};
+  const famData = famSnap.data();
+  // parentIds 배열 또는 레거시 parentId 호환
+  const parentIds = famData.parentIds || (famData.parentId ? [famData.parentId] : []);
 
-  if (parentId) {
-    const parentSnap = await db.doc(`users/${parentId}`).get();
+  const parents = [];
+  for (const pid of parentIds) {
+    const parentSnap = await db.doc(`users/${pid}`).get();
     if (parentSnap.exists) {
-      token = parentSnap.data().pushToken || null;
-      notifSettings = parentSnap.data().notificationSettings || {};
+      const pData = parentSnap.data();
+      parents.push({
+        token: pData.pushToken || null,
+        notifSettings: pData.notificationSettings || {},
+      });
     }
   }
 
@@ -63,7 +67,18 @@ async function getParentTokenAndChildName(familyId, childUid) {
     }
   }
 
-  return { token, notifSettings, childName };
+  return { parents, childName };
+}
+
+// 모든 부모에게 푸시 전송
+async function sendPushToAllParents(parents, notifKey, { title, body, data }) {
+  const promises = [];
+  for (const p of parents) {
+    if (notifKey && p.notifSettings[notifKey] === false) continue;
+    if (!p.token) continue;
+    promises.push(sendExpoPush({ token: p.token, title, body, data }));
+  }
+  return Promise.all(promises);
 }
 
 // ============================================
@@ -76,15 +91,11 @@ exports.onSOSCreated = onDocumentCreated(
     const data = event.data.data();
     const childUid = data.childUid;
 
-    const { token, notifSettings, childName } =
-      await getParentTokenAndChildName(familyId, childUid);
-
-    if (notifSettings.sos === false) return;
-    if (!token) return;
+    const { parents, childName } =
+      await getParentTokensAndChildName(familyId, childUid);
 
     const address = data.location?.address;
-    await sendExpoPush({
-      token,
+    await sendPushToAllParents(parents, "sos", {
       title: "🚨 SOS 알림",
       body: address
         ? `${childName}이(가) 위험 신호를 보냈습니다! 위치: ${address}`
@@ -103,15 +114,11 @@ exports.onGeofenceAlert = onDocumentCreated(
     const { familyId } = event.params;
     const data = event.data.data();
 
-    const { token, notifSettings } =
-      await getParentTokenAndChildName(familyId, data.childUid);
-
-    if (notifSettings.geofence === false) return;
-    if (!token) return;
+    const { parents } =
+      await getParentTokensAndChildName(familyId, data.childUid);
 
     const isEnter = data.type === "enter";
-    await sendExpoPush({
-      token,
+    await sendPushToAllParents(parents, "geofence", {
       title: isEnter
         ? `📍 ${data.geofenceName} 도착`
         : `🚶 ${data.geofenceName} 이탈`,
@@ -143,14 +150,10 @@ exports.onLowBattery = onDocumentUpdated(
     const prevBattery = before?.battery ?? 100;
     if (prevBattery <= 20 && Math.abs(prevBattery - battery) < 5) return;
 
-    const { token, notifSettings, childName } =
-      await getParentTokenAndChildName(familyId, childUid);
+    const { parents, childName } =
+      await getParentTokensAndChildName(familyId, childUid);
 
-    if (notifSettings.battery === false) return;
-    if (!token) return;
-
-    await sendExpoPush({
-      token,
+    await sendPushToAllParents(parents, "battery", {
       title: "🔋 저배터리 알림",
       body: `${childName}의 배터리가 ${battery}%입니다. 충전이 필요해요.`,
       data: { type: "lowBattery", familyId, childUid },
@@ -161,20 +164,91 @@ exports.onLowBattery = onDocumentUpdated(
 // ============================================
 // 4) 추가 시간 요청 생성 시 → 부모에게 푸시
 // ============================================
+// ============================================
+// 4-1) 큰소리 신호 → 자녀에게 푸시 (무음모드에서도 울림)
+// ============================================
+exports.onLoudSignal = onDocumentCreated(
+  "families/{familyId}/loudSignals/{signalId}",
+  async (event) => {
+    const { familyId } = event.params;
+    const data = event.data.data();
+    const childUid = data.childUid;
+
+    if (!childUid) return;
+
+    const childSnap = await db.doc(`users/${childUid}`).get();
+    if (!childSnap.exists) return;
+
+    const childToken = childSnap.data().pushToken;
+    if (!childToken) return;
+
+    await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Accept-Encoding": "gzip, deflate",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        to: childToken,
+        sound: "default",
+        title: "📢 부모님이 연락을 원해요!",
+        body: data.message || "지금 바로 확인해주세요!",
+        data: { type: "loudSignal", familyId },
+        priority: "high",
+        channelId: "loud-signal",
+      }),
+    });
+  }
+);
+
+// ============================================
+// 5) 가족 채팅 메시지 → 상대방에게 푸시
+// ============================================
+exports.onChatMessage = onDocumentCreated(
+  "families/{familyId}/chat/{messageId}",
+  async (event) => {
+    const { familyId } = event.params;
+    const data = event.data.data();
+    const senderUid = data.senderUid;
+
+    const famSnap = await db.doc(`families/${familyId}`).get();
+    if (!famSnap.exists) return;
+
+    const famData = famSnap.data();
+    const parentIds = famData.parentIds || (famData.parentId ? [famData.parentId] : []);
+    const childIds = famData.children || [];
+    const allMembers = [...parentIds, ...childIds];
+
+    // 발신자 제외한 모든 가족에게 푸시
+    const recipients = allMembers.filter((uid) => uid !== senderUid);
+
+    for (const uid of recipients) {
+      const userSnap = await db.doc(`users/${uid}`).get();
+      if (!userSnap.exists) continue;
+      const token = userSnap.data().pushToken;
+      if (!token) continue;
+
+      await sendExpoPush({
+        token,
+        title: `💬 ${data.senderName || '가족'}`,
+        body: data.text || '새 메시지가 있어요',
+        data: { type: "chat", familyId },
+      });
+    }
+  }
+);
+
 exports.onTimeRequest = onDocumentCreated(
   "families/{familyId}/timeRequests/{requestId}",
   async (event) => {
     const { familyId } = event.params;
     const data = event.data.data();
 
-    const { token, notifSettings } =
-      await getParentTokenAndChildName(familyId, data.childUid);
+    const { parents } =
+      await getParentTokensAndChildName(familyId, data.childUid);
 
-    if (notifSettings.timeRequest === false) return;
-    if (!token) return;
-
-    await sendExpoPush({
-      token,
+    await sendPushToAllParents(parents, "timeRequest", {
       title: "⏰ 추가 시간 요청",
       body: `${data.childName}이(가) ${data.extraMinutes}분 추가를 요청했습니다.`,
       data: { type: "timeRequest", familyId },

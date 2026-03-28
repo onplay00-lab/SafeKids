@@ -35,6 +35,7 @@ export default function ChildLayout() {
       tabBarLabelStyle:{fontSize:11, marginTop:0},
     }}>
       <Tabs.Screen name="index" options={{title:'홈', tabBarIcon:({focused}) => <TabIcon icon="🏠" focused={focused}/>}} />
+      <Tabs.Screen name="chat" options={{title:'채팅', tabBarIcon:({focused}) => <TabIcon icon="💬" focused={focused}/>}} />
       <Tabs.Screen name="promise" options={{title:'약속', tabBarIcon:({focused}) => <TabIcon icon="✅" focused={focused}/>}} />
       <Tabs.Screen name="sos" options={{title:'SOS', tabBarIcon:({focused}) => <TabIcon icon="🚨" focused={focused}/>}} />
     </Tabs>

@@ -48,6 +48,8 @@ export async function addGeofence(familyId, { name, latitude, longitude, radius 
     longitude,
     radius: Number(radius),
     enabled: true,
+    notifyOnEnter: true,
+    notifyOnExit: true,
     color,
     createdAt: serverTimestamp(),
   });
@@ -58,6 +60,13 @@ export async function addGeofence(familyId, { name, latitude, longitude, radius 
 // ============================================
 export async function toggleGeofence(familyId, geofenceId, enabled) {
   await updateDoc(doc(db, 'families', familyId, 'geofences', geofenceId), { enabled });
+}
+
+// ============================================
+// 3-2) 지오펜스 알림 설정 업데이트
+// ============================================
+export async function updateGeofenceNotify(familyId, geofenceId, { notifyOnEnter, notifyOnExit }) {
+  await updateDoc(doc(db, 'families', familyId, 'geofences', geofenceId), { notifyOnEnter, notifyOnExit });
 }
 
 // ============================================
@@ -96,10 +105,10 @@ export async function checkGeofences(familyId, childUid, latitude, longitude) {
 
     const prev = prevStatus[geo.id];
 
-    // 처음 체크거나 상태 변화 시 알림
-    if (prev === 'inside' && !isInside) {
+    // 상태 변화 시 알림 (개별 알림 설정 반영)
+    if (prev === 'inside' && !isInside && geo.notifyOnExit !== false) {
       alerts.push({ geo, type: 'exit' });
-    } else if (prev === 'outside' && isInside) {
+    } else if (prev === 'outside' && isInside && geo.notifyOnEnter !== false) {
       alerts.push({ geo, type: 'enter' });
     }
   }
