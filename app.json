@@ -13,7 +13,8 @@
       "url": "https://u.expo.dev/5266290a-3a64-4881-af30-52167f38801a"
     },
     "android": {
-      "package": "com.onplay00.safekids"
+      "package": "com.onplay00.safekids",
+      "versionCode": 2
     },
     "ios": {
       "bundleIdentifier": "com.onplay00.safekids"
