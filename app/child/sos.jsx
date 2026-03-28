@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Linking } from 'react-native';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'expo-router';
-import { auth } from '../../constants/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { sendSOS } from '../../src/services/sosService';
@@ -12,6 +13,14 @@ export default function ChildSOS() {
   const { familyId } = useAuth();
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [contacts, setContacts] = useState([]);
+
+  useEffect(() => {
+    if (!familyId) return;
+    getDoc(doc(db, 'families', familyId)).then((snap) => {
+      if (snap.exists()) setContacts(snap.data().emergencyContacts || []);
+    });
+  }, [familyId]);
 
   async function handleLogout() {
     await signOut(auth);
@@ -99,6 +108,24 @@ export default function ChildSOS() {
         </TouchableOpacity>
       </View>
 
+      {contacts.length > 0 && (
+        <>
+          <Text style={[s.emergencyLabel, { marginTop: 20 }]}>가족 연락처</Text>
+          <View style={s.contactList}>
+            {contacts.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={s.contactBtn}
+                onPress={() => Linking.openURL(`tel:${c.phone}`)}
+              >
+                <Text style={s.contactName}>{c.name}</Text>
+                <Text style={s.contactPhone}>📞 {c.phone}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
+      )}
+
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
         <Text style={s.logoutText}>로그아웃</Text>
       </TouchableOpacity>
@@ -130,4 +157,8 @@ const s = StyleSheet.create({
   callDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   logoutBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 32, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
   logoutText: { fontSize: 14, color: Colors.danger },
+  contactList: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  contactBtn: { flex: 1, minWidth: '45%', backgroundColor: Colors.primaryLight, borderRadius: 12, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: Colors.primary },
+  contactName: { fontSize: 15, fontWeight: '700', color: Colors.primary },
+  contactPhone: { fontSize: 12, color: Colors.textSecondary, marginTop: 4 },
 });

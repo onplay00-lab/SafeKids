@@ -1,4 +1,4 @@
-import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, getDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, getDoc, doc, updateDoc } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import { db, auth } from '../../constants/firebase';
 
@@ -53,7 +53,17 @@ export async function sendSOS(familyId) {
 }
 
 // ============================================
-// 2) 부모: SOS 알림 실시간 구독
+// 2) 부모: SOS 해결 처리
+// ============================================
+export async function resolveSOS(familyId, sosId) {
+  await updateDoc(doc(db, 'families', familyId, 'sos', sosId), {
+    resolved: true,
+    resolvedAt: serverTimestamp(),
+  });
+}
+
+// ============================================
+// 3) 부모: SOS 알림 실시간 구독
 // ============================================
 export function subscribeSOS(familyId, callback) {
   if (!familyId) return () => {};

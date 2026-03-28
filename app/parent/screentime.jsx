@@ -4,7 +4,7 @@ import { doc, getDoc, collection, query, onSnapshot, orderBy, updateDoc, serverT
 import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
-import { subscribeScreentime, updateAppLimit, updateDailyLimit, updateWeeklyLimits, updateSchedule } from '../../src/services/screentimeService';
+import { subscribeScreentime, updateAppLimit, updateDailyLimit, updateWeeklyLimits, updateSchedule, fetchScreentimeHistory } from '../../src/services/screentimeService';
 
 function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}시간 ${mm}분` : `${mm}분`; }
 
@@ -23,6 +23,8 @@ export default function ParentScreenTime() {
     study: { start: '16:00', end: '18:00', enabled: true },
   });
   const [timePicker, setTimePicker] = useState(null); // { type: 'sleep'|'study', field: 'start'|'end' }
+  const [reportData, setReportData] = useState([]);
+  const [showReport, setShowReport] = useState(false);
 
   // 가족 내 아이 목록 로드
   useEffect(() => {
@@ -54,6 +56,14 @@ export default function ParentScreenTime() {
       if (data?.schedule) setSchedule(data.schedule);
     });
     return () => unsub();
+  }, [familyId, children, selectedIdx]);
+
+  // 주간 리포트 로드
+  useEffect(() => {
+    if (!familyId || children.length === 0) return;
+    const child = children[selectedIdx];
+    if (!child) return;
+    fetchScreentimeHistory(familyId, child.uid, 7).then(setReportData);
   }, [familyId, children, selectedIdx]);
 
   // 추가 시간 요청 실시간 구독 (pending 우선 표시)
@@ -368,6 +378,45 @@ export default function ParentScreenTime() {
         </View>
       </View>
 
+      {/* 주간 리포트 */}
+      <View style={s.card}>
+        <TouchableOpacity style={s.row} onPress={() => setShowReport(!showReport)}>
+          <Text style={s.cardLabel}>주간 리포트</Text>
+          <Text style={s.weeklyToggle}>{showReport ? '접기' : '펼치기'}</Text>
+        </TouchableOpacity>
+        {showReport && (
+          reportData.length === 0 ? (
+            <Text style={s.reportEmpty}>아직 기록이 없어요. 내일부터 쌓입니다!</Text>
+          ) : (
+            <>
+              {/* 막대 차트 */}
+              <View style={s.reportChart}>
+                {reportData.slice().reverse().map((item) => {
+                  const pct = item.dailyLimit > 0 ? Math.min(100, Math.round((item.dailyUsage / item.dailyLimit) * 100)) : 0;
+                  const over = item.dailyUsage > item.dailyLimit;
+                  const dayLabel = DAY_LABELS[new Date(item.date).getDay()];
+                  return (
+                    <View key={item.date} style={s.reportBarItem}>
+                      <View style={s.reportBarBg}>
+                        <View style={[s.reportBarFill, { height: `${pct}%`, backgroundColor: over ? Colors.danger : Colors.primary }]} />
+                      </View>
+                      <Text style={s.reportBarDay}>{dayLabel}</Text>
+                      <Text style={s.reportBarVal}>{item.dailyUsage}분</Text>
+                    </View>
+                  );
+                })}
+              </View>
+              {/* 평균 */}
+              <View style={s.reportSummary}>
+                <Text style={s.reportSummaryText}>
+                  주평균 {Math.round(reportData.reduce((s, d) => s + (d.dailyUsage || 0), 0) / reportData.length)}분 / 일
+                </Text>
+              </View>
+            </>
+          )
+        )}
+      </View>
+
       {/* 시간 선택 모달 */}
       {timePicker && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setTimePicker(null)}>
@@ -484,6 +533,17 @@ const s = StyleSheet.create({
   weeklyVal:       { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, minWidth: 50, textAlign: 'center' },
   weeklyDisableBtn:{ marginTop: 10, alignItems: 'center', paddingVertical: 8 },
   weeklyDisableText:{ fontSize: 12, color: Colors.textHint },
+
+  // 주간 리포트
+  reportEmpty:    { fontSize: 13, color: Colors.textSecondary, marginTop: 6, textAlign: 'center', paddingVertical: 12 },
+  reportChart:    { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', height: 80, marginTop: 10, marginBottom: 4 },
+  reportBarItem:  { alignItems: 'center', flex: 1 },
+  reportBarBg:    { width: 18, height: 70, backgroundColor: Colors.border, borderRadius: 4, justifyContent: 'flex-end', overflow: 'hidden' },
+  reportBarFill:  { width: '100%', borderRadius: 4 },
+  reportBarDay:   { fontSize: 11, color: Colors.textSecondary, marginTop: 4 },
+  reportBarVal:   { fontSize: 10, color: Colors.textHint, marginTop: 1 },
+  reportSummary:  { alignItems: 'center', marginTop: 8 },
+  reportSummaryText: { fontSize: 12, color: Colors.textSecondary },
   weeklyPreview:   { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
   weeklyPreviewItem:{ alignItems: 'center' },
   weeklyPreviewDay:{ fontSize: 12, color: Colors.textSecondary, marginBottom: 2 },

@@ -1,5 +1,5 @@
 import { AppState, Platform } from 'react-native';
-import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, serverTimestamp, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../constants/firebase';
 import {
   checkPermission,
@@ -83,6 +83,22 @@ export async function initScreentime() {
   if (!snap.exists() || snap.data().date !== today) {
     const prevData = snap.exists() ? snap.data() : {};
     const prevApps = prevData.apps || {};
+
+    // 전날 데이터가 있으면 히스토리에 저장
+    if (snap.exists() && prevData.date && prevData.date !== today) {
+      try {
+        const histRef = doc(db, 'families', familyId, 'screentimeHistory', user.uid, 'daily', prevData.date);
+        await setDoc(histRef, {
+          date: prevData.date,
+          dailyUsage: prevData.dailyUsage || 0,
+          dailyLimit: prevData.dailyLimit || DEFAULT_DAILY_LIMIT,
+          apps: prevData.apps || {},
+          savedAt: serverTimestamp(),
+        });
+      } catch (e) {
+        console.log('히스토리 저장 실패:', e);
+      }
+    }
 
     const apps = {};
     for (const [key, def] of Object.entries(DEFAULT_APPS)) {
@@ -387,6 +403,21 @@ export async function updateAppLimit(familyId, childUid, appKey, limit) {
 // ============================================
 export async function updateSchedule(familyId, childUid, schedule) {
   await setDoc(getRef(familyId, childUid), { schedule, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+// ============================================
+// 12) 최근 N일 히스토리 조회 (리포트용)
+// ============================================
+export async function fetchScreentimeHistory(familyId, childUid, days = 7) {
+  try {
+    const histRef = collection(db, 'families', familyId, 'screentimeHistory', childUid, 'daily');
+    const q = query(histRef, orderBy('date', 'desc'), limit(days));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data());
+  } catch (e) {
+    console.log('히스토리 조회 실패:', e);
+    return [];
+  }
 }
 
 export { DEFAULT_APPS, PACKAGE_MAP };

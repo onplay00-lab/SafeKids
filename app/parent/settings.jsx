@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, Alert, ActivityIndicator, Linking } from 'react-native';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'expo-router';
@@ -21,9 +21,10 @@ const NOTIF_ITEMS = [
   { key: 'geofence',    label: '지오펜스 알림',  desc: '자녀 안전 구역 진입/이탈' },
   { key: 'sos',         label: 'SOS 알림',       desc: '자녀 긴급 신호' },
   { key: 'timeRequest', label: '시간 요청 알림', desc: '자녀의 추가 시간 요청' },
+  { key: 'battery',     label: '저배터리 알림',  desc: '자녀 기기 배터리 20% 이하' },
 ];
 
-const DEFAULT_NOTIF = { geofence: true, sos: true, timeRequest: true };
+const DEFAULT_NOTIF = { geofence: true, sos: true, timeRequest: true, battery: true };
 
 export default function ParentSettings() {
   const router = useRouter();
@@ -39,6 +40,10 @@ export default function ParentSettings() {
   const [childNames, setChildNames] = useState({});
   const [editingChild, setEditingChild] = useState(null);
   const [editName, setEditName] = useState('');
+  const [contacts, setContacts] = useState([]);
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
+  const [showAddContact, setShowAddContact] = useState(false);
 
   // 자녀 목록 및 이름 로드
   useEffect(() => {
@@ -74,6 +79,32 @@ export default function ParentSettings() {
     if (!familyId) return;
     return subscribePromises(familyId, setPromises);
   }, [familyId]);
+
+  // 긴급연락처 로드
+  useEffect(() => {
+    if (!familyId) return;
+    getDoc(doc(db, 'families', familyId)).then((snap) => {
+      if (snap.exists()) setContacts(snap.data().emergencyContacts || []);
+    });
+  }, [familyId]);
+
+  async function handleAddContact() {
+    const name = newContactName.trim();
+    const phone = newContactPhone.trim().replace(/[^0-9]/g, '');
+    if (!name || !phone) { Alert.alert('이름과 전화번호를 입력해주세요'); return; }
+    const updated = [...contacts, { name, phone, id: Date.now().toString() }];
+    setContacts(updated);
+    await updateDoc(doc(db, 'families', familyId), { emergencyContacts: updated });
+    setNewContactName('');
+    setNewContactPhone('');
+    setShowAddContact(false);
+  }
+
+  async function handleDeleteContact(id) {
+    const updated = contacts.filter((c) => c.id !== id);
+    setContacts(updated);
+    await updateDoc(doc(db, 'families', familyId), { emergencyContacts: updated });
+  }
 
   async function handleAddPromise() {
     const text = newPromiseText.trim();
@@ -262,6 +293,60 @@ export default function ParentSettings() {
         )}
       </View>
 
+      {/* 긴급연락처 */}
+      <Text style={[s.section, {marginTop:24}]}>긴급연락처</Text>
+      <View style={s.card}>
+        {contacts.length === 0 && !showAddContact && (
+          <Text style={s.emptyHint}>긴급 시 자녀가 바로 전화할 수 있는 연락처를 추가하세요</Text>
+        )}
+        {contacts.map((c, i) => (
+          <View key={c.id} style={[s.contactRow, i < contacts.length - 1 && s.settingRowBorder]}>
+            <View style={s.contactInfo}>
+              <Text style={s.contactName}>{c.name}</Text>
+              <Text style={s.contactPhone}>{c.phone}</Text>
+            </View>
+            <TouchableOpacity onPress={() => Linking.openURL(`tel:${c.phone}`)}>
+              <Text style={s.contactCall}>📞</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.contactDelBtn} onPress={() => handleDeleteContact(c.id)}>
+              <Text style={s.contactDelText}>×</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+        {showAddContact ? (
+          <View style={s.addContactForm}>
+            <TextInput
+              style={s.addInput}
+              placeholder="이름 (예: 엄마)"
+              placeholderTextColor={Colors.textHint}
+              value={newContactName}
+              onChangeText={setNewContactName}
+              autoFocus
+            />
+            <TextInput
+              style={[s.addInput, { marginTop: 8 }]}
+              placeholder="전화번호 (예: 01012345678)"
+              placeholderTextColor={Colors.textHint}
+              value={newContactPhone}
+              onChangeText={setNewContactPhone}
+              keyboardType="phone-pad"
+            />
+            <View style={s.addRow}>
+              <TouchableOpacity style={s.addSaveBtn} onPress={handleAddContact}>
+                <Text style={s.addSaveBtnText}>추가</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setShowAddContact(false); setNewContactName(''); setNewContactPhone(''); }}>
+                <Text style={s.addCancelText}>취소</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity style={s.addPromiseBtn} onPress={() => setShowAddContact(true)}>
+            <Text style={s.addPromiseBtnText}>+ 연락처 추가</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       <Text style={[s.section, {marginTop:24}]}>알림 설정</Text>
       <View style={s.card}>
         {NOTIF_ITEMS.map(({ key, label, desc }, i) => {
@@ -340,4 +425,12 @@ const s = StyleSheet.create({
   editSaveBtnText:  { fontSize: 13, fontWeight: '600', color: Colors.white },
   logoutBtn:        { alignItems: 'center', paddingVertical: 14, marginTop: 32, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
   logoutText:       { fontSize: 14, color: Colors.danger },
+  contactRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
+  contactInfo:      { flex: 1 },
+  contactName:      { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
+  contactPhone:     { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  contactCall:      { fontSize: 22, marginHorizontal: 10 },
+  contactDelBtn:    { padding: 4 },
+  contactDelText:   { fontSize: 20, color: Colors.textHint },
+  addContactForm:   { marginTop: 8 },
 });

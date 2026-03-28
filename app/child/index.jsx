@@ -3,8 +3,9 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Platform, Modal, TextInput, KeyboardAvoidingView, AppState,
 } from 'react-native';
-import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
+import * as Notifications from 'expo-notifications';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { startLocationTracking } from '../../src/services/locationService';
@@ -39,6 +40,7 @@ export default function ChildHome() {
   const [lastRequest, setLastRequest] = useState(null); // 가장 최근 요청 상태
   const [needOverlayPerm, setNeedOverlayPerm] = useState(false);
   const prevRemaining = useRef(null);
+  const warnedAt = useRef({ warn15: false, warn5: false, warnOver: false });
 
   // 오버레이 권한 확인
   useEffect(() => {
@@ -52,12 +54,38 @@ export default function ChildHome() {
     checkOverlay();
   }, []);
 
-  // 시간 초과 시 오버레이 잠금 표시 / 해제
+  // 시간 초과 시 오버레이 잠금 표시 / 해제 + 경고 알림
   useEffect(() => {
-    if (Platform.OS !== 'android' || screenData === null) return;
+    if (screenData === null) return;
     const usage = screenData?.dailyUsage || 0;
     const limit = screenData?.dailyLimit || 240;
     const rem = Math.max(0, limit - usage);
+
+    // 제한 시간이 바뀌면 경고 상태 초기화
+    if (prevRemaining.current !== null && rem > prevRemaining.current + 10) {
+      warnedAt.current = { warn15: false, warn5: false, warnOver: false };
+    }
+
+    // 로컬 경고 알림 (15분, 5분 전)
+    async function sendWarning(title, body) {
+      try {
+        await Notifications.scheduleNotificationAsync({
+          content: { title, body, sound: true },
+          trigger: null,
+        });
+      } catch (e) {}
+    }
+
+    if (rem > 0 && rem <= 15 && !warnedAt.current.warn15) {
+      warnedAt.current.warn15 = true;
+      sendWarning('⏰ 시간 알림', `남은 시간 ${rem}분! 곧 화면이 잠깁니다.`);
+    }
+    if (rem > 0 && rem <= 5 && !warnedAt.current.warn5) {
+      warnedAt.current.warn5 = true;
+      sendWarning('⚠️ 시간 부족', `남은 시간 ${rem}분! 마무리하세요.`);
+    }
+
+    if (Platform.OS !== 'android') { prevRemaining.current = rem; return; }
 
     async function updateOverlay() {
       try {
@@ -65,6 +93,10 @@ export default function ChildHome() {
         if (!hasOverlay) return;
 
         if (rem <= 0) {
+          if (!warnedAt.current.warnOver) {
+            warnedAt.current.warnOver = true;
+            sendWarning('🔒 화면 잠금', '오늘 사용 시간을 모두 사용했어요.');
+          }
           await ExpoUsageStats.showLockOverlay(
             `부모님이 설정한 ${fmt(limit)}을 모두 사용했어요`
           );
@@ -93,6 +125,30 @@ export default function ChildHome() {
     });
     return () => sub.remove();
   }, []);
+
+  // 온라인 상태 업데이트
+  useEffect(() => {
+    if (!user || !familyId) return;
+    const presenceRef = doc(db, 'families', familyId, 'presence', user.uid);
+
+    async function setOnline(isOnline) {
+      try {
+        await setDoc(presenceRef, { isOnline, lastSeen: serverTimestamp() }, { merge: true });
+      } catch (e) {}
+    }
+
+    // 앱 시작 시 온라인
+    setOnline(true);
+
+    const sub = AppState.addEventListener('change', (state) => {
+      setOnline(state === 'active');
+    });
+
+    return () => {
+      setOnline(false);
+      sub.remove();
+    };
+  }, [user, familyId]);
 
   // 위치 추적
   useEffect(() => {
@@ -230,10 +286,29 @@ export default function ChildHome() {
         </View>
       )}
 
+      {/* 시간 경고 배너 */}
+      {remaining > 0 && remaining <= 15 && (
+        <View style={[s.warnBanner, remaining <= 5 && s.warnBannerUrgent]}>
+          <Text style={s.warnBannerText}>
+            {remaining <= 5
+              ? `⚠️ 남은 시간 ${remaining}분! 곧 화면이 잠깁니다.`
+              : `⏰ 남은 시간 ${remaining}분입니다. 마무리하세요!`}
+          </Text>
+        </View>
+      )}
+      {remaining <= 0 && (
+        <View style={s.warnBannerOver}>
+          <Text style={s.warnBannerOverText}>🔒 오늘 사용 시간을 모두 사용했어요</Text>
+        </View>
+      )}
+
       {/* 남은 시간 링 */}
       <View style={s.timerArea}>
-        <View style={[s.timerRing, { borderColor: remaining > 0 ? Colors.primaryLight : '#FCEBEB' }]}>
-          <Text style={s.timerVal}>{fmt(remaining)}</Text>
+        <View style={[s.timerRing, {
+          borderColor: remaining <= 0 ? '#F09595' : remaining <= 15 ? '#FFB74D' : Colors.primaryLight,
+          borderWidth: remaining <= 15 ? 4 : 3,
+        }]}>
+          <Text style={[s.timerVal, remaining <= 0 && { color: Colors.danger }, remaining > 0 && remaining <= 15 && { color: '#E65100' }]}>{fmt(remaining)}</Text>
           <Text style={s.timerLabel}>남은 시간</Text>
         </View>
         <Text style={s.timerSub}>오늘 {fmt(dailyUsage)} 사용 / 제한 {fmt(dailyLimit)}</Text>
@@ -433,6 +508,11 @@ const s = StyleSheet.create({
   modeFallback:{ backgroundColor: '#FFF3E0' },
   modeText:    { fontSize: 12, color: Colors.textSecondary },
 
+  warnBanner:        { backgroundColor: '#FFF3E0', borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#FFB74D' },
+  warnBannerUrgent:  { backgroundColor: '#FBE9E7', borderColor: '#FF7043' },
+  warnBannerText:    { fontSize: 14, fontWeight: '600', color: '#E65100', textAlign: 'center' },
+  warnBannerOver:    { backgroundColor: Colors.dangerBg, borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#F09595' },
+  warnBannerOverText:{ fontSize: 14, fontWeight: '600', color: Colors.danger, textAlign: 'center' },
   timerArea:   { alignItems: 'center', marginBottom: 20 },
   timerRing:   { width: 180, height: 180, borderRadius: 90, borderWidth: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   timerVal:    { fontSize: 20, fontWeight: '700', color: Colors.textPrimary },
