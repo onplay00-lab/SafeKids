@@ -19,7 +19,7 @@
     "ios": {
       "bundleIdentifier": "com.onplay00.safekids"
     },
-    "plugins": ["expo-router", "./modules/expo-usage-stats/app.plugin.js", "expo-notifications", "expo-av"],
+    "plugins": ["expo-router", "./modules/expo-usage-stats/app.plugin.js", "expo-notifications"],
     "experiments": {
       "typedRoutes": true
     },
