@@ -239,6 +239,26 @@ exports.onChatMessage = onDocumentCreated(
   }
 );
 
+// ============================================
+// 6) 감정 체크인 → 부모에게 푸시
+// ============================================
+exports.onEmotionCheck = onDocumentCreated(
+  "families/{familyId}/emotionChecks/{checkId}",
+  async (event) => {
+    const { familyId } = event.params;
+    const data = event.data.data();
+
+    const { parents } =
+      await getParentTokensAndChildName(familyId, data.childUid);
+
+    await sendPushToAllParents(parents, null, {
+      title: `${data.emoji} ${data.childName}의 기분`,
+      body: `오늘 기분: ${data.label}`,
+      data: { type: "emotion", familyId },
+    });
+  }
+);
+
 exports.onTimeRequest = onDocumentCreated(
   "families/{familyId}/timeRequests/{requestId}",
   async (event) => {

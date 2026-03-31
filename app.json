@@ -2,7 +2,7 @@
   "expo": {
     "name": "SafeKids",
     "slug": "safekids",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "scheme": "safekids",
     "platforms": ["ios", "android", "web"],
@@ -14,12 +14,12 @@
     },
     "android": {
       "package": "com.onplay00.safekidsapp",
-      "versionCode": 3
+      "versionCode": 4
     },
     "ios": {
       "bundleIdentifier": "com.onplay00.safekids"
     },
-    "plugins": ["expo-router", "./modules/expo-usage-stats/app.plugin.js", "expo-notifications"],
+    "plugins": ["expo-router", "./modules/expo-usage-stats/app.plugin.js", "expo-notifications", "expo-av"],
     "experiments": {
       "typedRoutes": true
     },

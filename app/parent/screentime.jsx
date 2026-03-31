@@ -5,6 +5,7 @@ import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { subscribeScreentime, updateAppLimit, updateDailyLimit, updateWeeklyLimits, updateSchedule, fetchScreentimeHistory } from '../../src/services/screentimeService';
+import { BLOCKABLE_APPS, updateBlockedApps, updateBlockSchedule, subscribeAppBlocking } from '../../src/services/appBlockingService';
 
 function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}시간 ${mm}분` : `${mm}분`; }
 
@@ -25,6 +26,8 @@ export default function ParentScreenTime() {
   const [timePicker, setTimePicker] = useState(null); // { type: 'sleep'|'study', field: 'start'|'end' }
   const [reportData, setReportData] = useState([]);
   const [showReport, setShowReport] = useState(false);
+  const [blockedApps, setBlockedApps] = useState({});
+  const [blockSchedule, setBlockSchedule] = useState({ enabled: false, start: '22:00', end: '07:00' });
 
   // 가족 내 아이 목록 로드
   useEffect(() => {
@@ -54,6 +57,18 @@ export default function ParentScreenTime() {
       setScreenData(data);
       setWeeklyLimits(data?.weeklyLimits || null);
       if (data?.schedule) setSchedule(data.schedule);
+    });
+    return () => unsub();
+  }, [familyId, children, selectedIdx]);
+
+  // 앱 차단 설정 구독
+  useEffect(() => {
+    if (!familyId || children.length === 0) return;
+    const child = children[selectedIdx];
+    if (!child) return;
+    const unsub = subscribeAppBlocking(familyId, child.uid, (data) => {
+      setBlockedApps(data?.blockedApps || {});
+      if (data?.schedule) setBlockSchedule(data.schedule);
     });
     return () => unsub();
   }, [familyId, children, selectedIdx]);
@@ -326,6 +341,61 @@ export default function ParentScreenTime() {
         </View>
       ))}
 
+      {/* 앱 차단 */}
+      <Text style={[s.section, { marginTop: 20 }]}>앱 차단</Text>
+      <View style={s.card}>
+        <Text style={s.blockDesc}>차단된 앱은 자녀 기기에서 사용할 수 없습니다</Text>
+        {Object.entries(BLOCKABLE_APPS).map(([key, app]) => {
+          const isBlocked = blockedApps[key] === true;
+          return (
+            <TouchableOpacity
+              key={key}
+              style={[s.settingRow, s.settingRowBorder]}
+              onPress={() => {
+                const updated = { ...blockedApps, [key]: !isBlocked };
+                setBlockedApps(updated);
+                if (selectedChild) updateBlockedApps(familyId, selectedChild.uid, updated);
+              }}
+            >
+              <View style={s.blockAppRow}>
+                <Text style={s.blockAppIcon}>{app.icon}</Text>
+                <Text style={s.blockAppName}>{app.name}</Text>
+              </View>
+              <View style={[s.toggle, isBlocked && s.toggleDanger]}>
+                <View style={[s.toggleThumb, isBlocked && s.toggleThumbOn]} />
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+        {/* 스케줄 기반 차단 */}
+        <View style={[s.schedRow, { borderBottomWidth: 0, marginTop: 8 }]}>
+          <View style={s.schedLeft}>
+            <Text style={s.schedName}>🕐 시간대 차단</Text>
+            <TouchableOpacity onPress={() => {
+              const updated = { ...blockSchedule, enabled: !blockSchedule.enabled };
+              setBlockSchedule(updated);
+              if (selectedChild) updateBlockSchedule(familyId, selectedChild.uid, updated);
+            }}>
+              <Text style={s.schedToggle}>{blockSchedule.enabled ? '켜짐' : '꺼짐'}</Text>
+            </TouchableOpacity>
+          </View>
+          {blockSchedule.enabled && (
+            <View style={s.schedTimes}>
+              <TouchableOpacity style={s.schedTimeBtn} onPress={() => setTimePicker({ type: 'blockSchedule', field: 'start' })}>
+                <Text style={s.schedTimeText}>{blockSchedule.start}</Text>
+              </TouchableOpacity>
+              <Text style={s.schedDash}>~</Text>
+              <TouchableOpacity style={s.schedTimeBtn} onPress={() => setTimePicker({ type: 'blockSchedule', field: 'end' })}>
+                <Text style={s.schedTimeText}>{blockSchedule.end}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+        {blockSchedule.enabled && (
+          <Text style={s.blockSchedHint}>이 시간에는 차단된 모든 앱이 자동으로 잠깁니다</Text>
+        )}
+      </View>
+
       <Text style={[s.section, { marginTop: 20 }]}>시간표</Text>
       <View style={s.card}>
         {/* 잠자는 시간 */}
@@ -423,7 +493,7 @@ export default function ParentScreenTime() {
           <View style={s.pickerOverlay}>
             <View style={s.pickerCard}>
               <Text style={s.pickerTitle}>
-                {timePicker.type === 'sleep' ? '잠자는 시간' : '공부 시간'} - {timePicker.field === 'start' ? '시작' : '종료'}
+                {timePicker.type === 'sleep' ? '잠자는 시간' : timePicker.type === 'study' ? '공부 시간' : '시간대 차단'} - {timePicker.field === 'start' ? '시작' : '종료'}
               </Text>
               <View style={s.pickerGrid}>
                 {Array.from({ length: 24 }, (_, h) => {
@@ -431,18 +501,24 @@ export default function ParentScreenTime() {
                   return times.map(t => (
                     <TouchableOpacity
                       key={t}
-                      style={[s.pickerItem, schedule[timePicker.type][timePicker.field] === t && s.pickerItemActive]}
+                      style={[s.pickerItem, (timePicker.type === 'blockSchedule' ? blockSchedule[timePicker.field] : schedule[timePicker.type][timePicker.field]) === t && s.pickerItemActive]}
                       onPress={() => {
-                        const updated = {
-                          ...schedule,
-                          [timePicker.type]: { ...schedule[timePicker.type], [timePicker.field]: t },
-                        };
-                        setSchedule(updated);
-                        if (selectedChild) updateSchedule(familyId, selectedChild.uid, updated);
+                        if (timePicker.type === 'blockSchedule') {
+                          const updated = { ...blockSchedule, [timePicker.field]: t };
+                          setBlockSchedule(updated);
+                          if (selectedChild) updateBlockSchedule(familyId, selectedChild.uid, updated);
+                        } else {
+                          const updated = {
+                            ...schedule,
+                            [timePicker.type]: { ...schedule[timePicker.type], [timePicker.field]: t },
+                          };
+                          setSchedule(updated);
+                          if (selectedChild) updateSchedule(familyId, selectedChild.uid, updated);
+                        }
                         setTimePicker(null);
                       }}
                     >
-                      <Text style={[s.pickerItemText, schedule[timePicker.type][timePicker.field] === t && s.pickerItemTextActive]}>{t}</Text>
+                      <Text style={[s.pickerItemText, (timePicker.type === 'blockSchedule' ? blockSchedule[timePicker.field] : schedule[timePicker.type][timePicker.field]) === t && s.pickerItemTextActive]}>{t}</Text>
                     </TouchableOpacity>
                   ));
                 })}
@@ -548,6 +624,14 @@ const s = StyleSheet.create({
   weeklyPreviewItem:{ alignItems: 'center' },
   weeklyPreviewDay:{ fontSize: 12, color: Colors.textSecondary, marginBottom: 2 },
   weeklyPreviewVal:{ fontSize: 12, fontWeight: '600', color: Colors.textPrimary },
+
+  // 앱 차단
+  blockDesc:       { fontSize: 12, color: Colors.textHint, marginBottom: 10 },
+  blockAppRow:     { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  blockAppIcon:    { fontSize: 20 },
+  blockAppName:    { fontSize: 14, color: Colors.textPrimary },
+  toggleDanger:    { backgroundColor: Colors.danger },
+  blockSchedHint:  { fontSize: 11, color: Colors.textHint, textAlign: 'center', marginTop: 4 },
 
   // 요청 카드
   reqCard:     { backgroundColor: '#FFF8E1', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#FFD54F' },

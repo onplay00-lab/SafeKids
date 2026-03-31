@@ -13,6 +13,8 @@ import {
   initScreentime, startUsageTracking, stopUsageTracking,
   subscribeMyScreentime, checkUsagePermission, requestUsagePermission,
 } from '../../src/services/screentimeService';
+import { subscribeAppBlocking, BLOCKABLE_APPS } from '../../src/services/appBlockingService';
+import { EMOTIONS, saveEmotionCheck, subscribeLatestEmotion } from '../../src/services/emotionService';
 import * as ExpoUsageStats from '../../modules/expo-usage-stats';
 
 function fmt(m) {
@@ -39,8 +41,96 @@ export default function ChildHome() {
   const [sending, setSending]   = useState(false);
   const [lastRequest, setLastRequest] = useState(null); // 가장 최근 요청 상태
   const [needOverlayPerm, setNeedOverlayPerm] = useState(false);
+  const [blockingData, setBlockingData] = useState(null);
+  const [currentEmotion, setCurrentEmotion] = useState(null);
+  const [showEmotionPicker, setShowEmotionPicker] = useState(false);
   const prevRemaining = useRef(null);
   const warnedAt = useRef({ warn15: false, warn5: false, warnOver: false });
+
+  // 감정 체크인 구독
+  useEffect(() => {
+    if (!user || !familyId) return;
+    const unsub = subscribeLatestEmotion(familyId, user.uid, (data) => {
+      setCurrentEmotion(data);
+      // 오늘 아직 체크인 안 했으면 자동으로 팝업
+      const today = new Date().toISOString().split('T')[0];
+      if (!data || data.date !== today) {
+        setShowEmotionPicker(true);
+      }
+    });
+    return () => unsub();
+  }, [user, familyId]);
+
+  async function handleEmotionSelect(emotionId) {
+    if (!user || !familyId) return;
+    const name = user.displayName || user.email?.split('@')[0] || '자녀';
+    await saveEmotionCheck(familyId, user.uid, name, emotionId);
+    setShowEmotionPicker(false);
+  }
+
+  // 앱 차단 설정 구독
+  useEffect(() => {
+    if (!user || !familyId) return;
+    const unsub = subscribeAppBlocking(familyId, user.uid, (data) => {
+      setBlockingData(data);
+    });
+    return () => unsub();
+  }, [user, familyId]);
+
+  // 차단된 앱 감지 및 오버레이 표시
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !blockingData) return;
+    const blocked = blockingData.blockedApps || {};
+    const sched = blockingData.schedule;
+
+    // 스케줄 차단 시간 체크
+    function isInBlockSchedule() {
+      if (!sched?.enabled) return false;
+      const now = new Date();
+      const hm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      if (sched.start <= sched.end) {
+        return hm >= sched.start && hm < sched.end;
+      }
+      return hm >= sched.start || hm < sched.end;
+    }
+
+    // 차단할 패키지 목록 만들기
+    const blockedPackages = new Set();
+    for (const [key, isBlocked] of Object.entries(blocked)) {
+      if (isBlocked && BLOCKABLE_APPS[key]) {
+        BLOCKABLE_APPS[key].packages.forEach(p => blockedPackages.add(p));
+      }
+    }
+
+    if (blockedPackages.size === 0 && !isInBlockSchedule()) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const hasOverlay = await ExpoUsageStats.checkOverlayPermission();
+        if (!hasOverlay) return;
+
+        const hasPerm = await ExpoUsageStats.checkPermission();
+        if (!hasPerm) return;
+
+        const stats = await ExpoUsageStats.getUsageStats(Date.now() - 5000, Date.now());
+        if (!stats || stats.length === 0) return;
+
+        // 가장 최근 포그라운드 앱 찾기
+        const sorted = stats.sort((a, b) => b.lastTimeUsed - a.lastTimeUsed);
+        const currentPkg = sorted[0]?.packageName;
+        if (!currentPkg) return;
+
+        const shouldBlock = blockedPackages.has(currentPkg) ||
+          (isInBlockSchedule() && blockedPackages.has(currentPkg));
+
+        if (shouldBlock) {
+          await ExpoUsageStats.showLockOverlay('부모님이 이 앱의 사용을 차단했습니다');
+        }
+      } catch (e) {}
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [blockingData]);
 
   // 오버레이 권한 확인
   useEffect(() => {
@@ -242,6 +332,43 @@ export default function ChildHome() {
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <Text style={s.title}>SafeKids</Text>
 
+      {/* 감정 체크인 */}
+      <TouchableOpacity style={s.emotionBar} onPress={() => setShowEmotionPicker(true)}>
+        {currentEmotion && currentEmotion.date === new Date().toISOString().split('T')[0] ? (
+          <>
+            <Text style={s.emotionEmoji}>{currentEmotion.emoji}</Text>
+            <Text style={s.emotionLabel}>오늘 기분: {currentEmotion.label}</Text>
+            <Text style={s.emotionChange}>변경</Text>
+          </>
+        ) : (
+          <>
+            <Text style={s.emotionEmoji}>🤔</Text>
+            <Text style={s.emotionLabel}>오늘 기분은 어때요?</Text>
+            <Text style={s.emotionChange}>선택</Text>
+          </>
+        )}
+      </TouchableOpacity>
+
+      {/* 감정 선택 모달 */}
+      <Modal visible={showEmotionPicker} transparent animationType="fade" onRequestClose={() => setShowEmotionPicker(false)}>
+        <View style={s.emotionOverlay}>
+          <View style={s.emotionCard}>
+            <Text style={s.emotionTitle}>오늘 기분은 어때요?</Text>
+            <View style={s.emotionGrid}>
+              {EMOTIONS.map((em) => (
+                <TouchableOpacity key={em.id} style={[s.emotionItem, { backgroundColor: em.color }]} onPress={() => handleEmotionSelect(em.id)}>
+                  <Text style={s.emotionItemEmoji}>{em.emoji}</Text>
+                  <Text style={[s.emotionItemLabel, { color: em.textColor }]}>{em.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={s.emotionClose} onPress={() => setShowEmotionPicker(false)}>
+              <Text style={s.emotionCloseText}>나중에</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* 위치 상태 */}
       <View style={s.locBar}>
         <Text style={s.locText}>{locStatus}</Text>
@@ -357,6 +484,27 @@ export default function ChildHome() {
               <Text style={s.allAppTime}>{fmt(app.usedMinutes)}</Text>
             </View>
           ))}
+        </View>
+      )}
+
+      {/* 차단된 앱 안내 */}
+      {blockingData && Object.entries(blockingData.blockedApps || {}).some(([, v]) => v) && (
+        <View style={s.blockBanner}>
+          <Text style={s.blockBannerTitle}>🚫 차단된 앱</Text>
+          <View style={s.blockAppList}>
+            {Object.entries(blockingData.blockedApps || {}).filter(([, v]) => v).map(([key]) => (
+              <View key={key} style={s.blockAppChip}>
+                <Text style={s.blockAppChipText}>
+                  {BLOCKABLE_APPS[key]?.icon} {BLOCKABLE_APPS[key]?.name}
+                </Text>
+              </View>
+            ))}
+          </View>
+          {blockingData.schedule?.enabled && (
+            <Text style={s.blockSchedText}>
+              🕐 차단 시간: {blockingData.schedule.start} ~ {blockingData.schedule.end}
+            </Text>
+          )}
         </View>
       )}
 
@@ -533,6 +681,28 @@ const s = StyleSheet.create({
   allAppRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
   allAppName:  { fontSize: 13, color: Colors.textPrimary, flex: 1 },
   allAppTime:  { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+
+  // 감정 체크인
+  emotionBar:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF8E1', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#FFE082' },
+  emotionEmoji:     { fontSize: 24, marginRight: 10 },
+  emotionLabel:     { flex: 1, fontSize: 14, color: Colors.textPrimary, fontWeight: '500' },
+  emotionChange:    { fontSize: 13, color: Colors.primary, fontWeight: '500' },
+  emotionOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
+  emotionCard:      { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '85%' },
+  emotionTitle:     { fontSize: 18, fontWeight: '700', color: Colors.textPrimary, textAlign: 'center', marginBottom: 20 },
+  emotionGrid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center' },
+  emotionItem:      { width: '22%', aspectRatio: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  emotionItemEmoji: { fontSize: 28 },
+  emotionItemLabel: { fontSize: 10, fontWeight: '600', marginTop: 4 },
+  emotionClose:     { marginTop: 16, alignItems: 'center', paddingVertical: 10 },
+  emotionCloseText: { fontSize: 14, color: Colors.textSecondary },
+
+  blockBanner:      { backgroundColor: '#FCEBEB', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#F09595' },
+  blockBannerTitle: { fontSize: 14, fontWeight: '600', color: Colors.danger, marginBottom: 8 },
+  blockAppList:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  blockAppChip:     { backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#F09595' },
+  blockAppChipText: { fontSize: 12, color: Colors.danger },
+  blockSchedText:   { fontSize: 11, color: Colors.textSecondary, marginTop: 8 },
 
   bonusCard:           { backgroundColor: Colors.bg, borderRadius: 12, padding: 16 },
   bonusTitle:          { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },
