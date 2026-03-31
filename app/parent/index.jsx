@@ -6,6 +6,7 @@ import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { subscribeScreentime } from '../../src/services/screentimeService';
 import { subscribeSOS, resolveSOS } from '../../src/services/sosService';
+import { subscribeLatestEmotion } from '../../src/services/emotionService';
 
 const CHILD_COLORS = [
   { color: Colors.primaryLight, textColor: Colors.primary },
@@ -32,6 +33,7 @@ export default function ParentHome() {
   const [presenceMap, setPresenceMap] = useState({});
   const [geoAlerts, setGeoAlerts] = useState([]);
   const [timeRequests, setTimeRequests] = useState([]);
+  const [emotionMap, setEmotionMap] = useState({});
   const [showAllAlerts, setShowAllAlerts] = useState(false);
 
   // 가족 내 아이 목록 로드
@@ -94,6 +96,17 @@ export default function ParentHome() {
         if (snap.exists()) {
           setPresenceMap((prev) => ({ ...prev, [c.uid]: snap.data() }));
         }
+      })
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [familyId, children]);
+
+  // 각 아이의 감정 상태 구독
+  useEffect(() => {
+    if (!familyId || children.length === 0) return;
+    const unsubs = children.map((c) =>
+      subscribeLatestEmotion(familyId, c.uid, (data) => {
+        setEmotionMap((prev) => ({ ...prev, [c.uid]: data }));
       })
     );
     return () => unsubs.forEach((u) => u());
@@ -172,6 +185,7 @@ export default function ParentHome() {
         const loc = locationMap[c.uid];
         const presence = presenceMap[c.uid];
         const hasSOS = sosAlerts.some(a => a.childUid === c.uid && !a.resolved);
+        const emotion = emotionMap[c.uid];
         const battery = loc?.battery ?? -1;
         const charging = loc?.charging ?? false;
         const lowBattery = battery >= 0 && battery <= 20 && !charging;
@@ -196,6 +210,9 @@ export default function ParentHome() {
                   <Text style={[s.batteryText, lowBattery && s.batteryLow]}>
                     {charging ? '⚡' : '🔋'}{battery}%
                   </Text>
+                )}
+                {emotion && emotion.date === new Date().toISOString().split('T')[0] && (
+                  <Text style={s.emotionBadge}>{emotion.emoji} {emotion.label}</Text>
                 )}
               </View>
             </View>
@@ -301,6 +318,7 @@ const s = StyleSheet.create({
   childLoc: { fontSize: 12, color: Colors.textSecondary },
   batteryText: { fontSize: 12, color: Colors.safe, fontWeight: '500' },
   batteryLow: { color: '#E65100' },
+  emotionBadge: { fontSize: 12, color: Colors.textSecondary },
   cardActions: { alignItems: 'center', gap: 6 },
   loudBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF3E0', alignItems: 'center', justifyContent: 'center' },
   loudBtnText: { fontSize: 16 },

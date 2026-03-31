@@ -21,14 +21,14 @@ service cloud.firestore {
     function isFamilyMember(familyId) {
       let family = get(/databases/$(database)/documents/families/$(familyId)).data;
       return isSignedIn() && (
-        family.parentId == request.auth.uid ||
+        request.auth.uid in family.parentIds ||
         request.auth.uid in family.children
       );
     }
 
     function isFamilyParent(familyId) {
       let family = get(/databases/$(database)/documents/families/$(familyId)).data;
-      return isSignedIn() && family.parentId == request.auth.uid;
+      return isSignedIn() && request.auth.uid in family.parentIds;
     }
 
     // ============================================
@@ -123,6 +123,45 @@ service cloud.firestore {
         // 부모가 승인/거절
         allow update: if isFamilyParent(familyId);
         allow delete: if false;
+      }
+
+      // --- chat ---
+      match /chat/{messageId} {
+        allow read: if isFamilyMember(familyId);
+        allow create: if isSignedIn() && isFamilyMember(familyId);
+        allow update, delete: if false;
+      }
+
+      // --- loudSignals ---
+      match /loudSignals/{signalId} {
+        allow read: if isFamilyMember(familyId);
+        allow create: if isFamilyParent(familyId);
+        allow update, delete: if false;
+      }
+
+      // --- appBlocking ---
+      match /appBlocking/{childUid} {
+        allow read: if isFamilyMember(familyId);
+        allow write: if isFamilyParent(familyId);
+      }
+
+      // --- emotionChecks ---
+      match /emotionChecks/{checkId} {
+        allow read: if isFamilyMember(familyId);
+        allow create: if isSignedIn() && isFamilyMember(familyId);
+        allow update, delete: if false;
+      }
+
+      // --- presence ---
+      match /presence/{uid} {
+        allow read: if isFamilyMember(familyId);
+        allow write: if isOwner(uid) && isFamilyMember(familyId);
+      }
+
+      // --- screentimeHistory ---
+      match /screentimeHistory/{childUid}/{document=**} {
+        allow read: if isFamilyMember(familyId);
+        allow write: if isOwner(childUid) && isFamilyMember(familyId);
       }
     }
 
