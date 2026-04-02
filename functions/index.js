@@ -30,6 +30,16 @@ const PUSH_STRINGS = {
     "emotion.body": "오늘 기분: {{label}}",
     "timeReq.title": "⏰ 추가 시간 요청",
     "timeReq.body": "{{name}}이(가) {{min}}분 추가를 요청했습니다.",
+    "sound.title": "🎧 주변 소리 요청",
+    "sound.body": "부모님이 주변 소리를 요청했습니다. 30초간 녹음됩니다.",
+    "sound.completeTitle": "🎧 주변 소리 녹음 완료",
+    "sound.completeBody": "{{name}}의 주변 소리 녹음이 완료되었습니다.",
+    "behavior.lateNightTitle": "🌙 심야 사용 감지",
+    "behavior.lateNightBody": "{{name}}이(가) 심야 시간({{time}})에 기기를 사용 중입니다.",
+    "behavior.overuseTitle": "📈 과다 사용 감지",
+    "behavior.overuseBody": "{{name}}이(가) 제한 시간({{limit}})의 {{pct}}%를 사용했습니다.",
+    "behavior.newAppTitle": "📱 새 앱 사용 감지",
+    "behavior.newAppBody": "{{name}}이(가) 새로운 앱 '{{app}}'을(를) 사용하기 시작했습니다.",
     "child": "자녀",
     "emotions.happy": "행복해", "emotions.excited": "신나", "emotions.calm": "평온해",
     "emotions.tired": "피곤해", "emotions.sad": "슬퍼", "emotions.angry": "화나",
@@ -54,6 +64,16 @@ const PUSH_STRINGS = {
     "emotion.body": "Today's mood: {{label}}",
     "timeReq.title": "⏰ Extra Time Request",
     "timeReq.body": "{{name}} requested {{min}} extra minutes.",
+    "sound.title": "🎧 Sound Around Request",
+    "sound.body": "Your parent requested to hear your surroundings. Recording for 30 seconds.",
+    "sound.completeTitle": "🎧 Sound Around Complete",
+    "sound.completeBody": "{{name}}'s surrounding sound recording is ready.",
+    "behavior.lateNightTitle": "🌙 Late Night Usage Detected",
+    "behavior.lateNightBody": "{{name}} is using the device late at night ({{time}}).",
+    "behavior.overuseTitle": "📈 Overuse Detected",
+    "behavior.overuseBody": "{{name}} has used {{pct}}% of the time limit ({{limit}}).",
+    "behavior.newAppTitle": "📱 New App Detected",
+    "behavior.newAppBody": "{{name}} started using a new app '{{app}}'.",
     "child": "Child",
     "emotions.happy": "Happy", "emotions.excited": "Excited", "emotions.calm": "Calm",
     "emotions.tired": "Tired", "emotions.sad": "Sad", "emotions.angry": "Angry",
@@ -361,5 +381,157 @@ exports.onTimeRequest = onDocumentCreated(
       bodyFn: (lang) => tr(lang, "timeReq.body", { name: data.childName, min: data.extraMinutes }),
       data: { type: "timeRequest", familyId },
     });
+  }
+);
+
+// ============================================
+// 8) Sound Around 요청 → 자녀에게 푸시
+// ============================================
+exports.onSoundRequest = onDocumentCreated(
+  "families/{familyId}/soundRequests/{requestId}",
+  async (event) => {
+    const { familyId } = event.params;
+    const data = event.data.data();
+    const childUid = data.childUid;
+
+    if (!childUid || data.status !== "pending") return;
+
+    const childSnap = await db.doc(`users/${childUid}`).get();
+    if (!childSnap.exists) return;
+
+    const childData = childSnap.data();
+    const childToken = childData.pushToken;
+    if (!childToken) return;
+
+    const lang = childData.language || "ko";
+    await sendExpoPush({
+      token: childToken,
+      title: tr(lang, "sound.title"),
+      body: tr(lang, "sound.body"),
+      data: { type: "soundRequest", familyId },
+    });
+  }
+);
+
+// ============================================
+// 9) Sound Around 완료 → 부모에게 푸시
+// ============================================
+exports.onSoundComplete = onDocumentUpdated(
+  "families/{familyId}/soundRequests/{requestId}",
+  async (event) => {
+    const { familyId } = event.params;
+    const before = event.data.before.data();
+    const after = event.data.after.data();
+
+    // pending → completed 전환 시에만
+    if (before.status !== "pending" || after.status !== "completed") return;
+
+    const { parents, childName } =
+      await getParentTokensAndChildName(familyId, after.childUid);
+
+    await sendPushToAllParents(parents, null, {
+      titleFn: (lang) => tr(lang, "sound.completeTitle"),
+      bodyFn: (lang) => tr(lang, "sound.completeBody", { name: childName }),
+      data: { type: "soundComplete", familyId },
+    });
+  }
+);
+
+// ============================================
+// 10) AI 행동 분석: 스크린타임 기록 생성 시 → 패턴 분석 + 알림
+// ============================================
+exports.analyzeDailyBehavior = onDocumentCreated(
+  "families/{familyId}/screentimeHistory/{childUid}/daily/{dateId}",
+  async (event) => {
+    const { familyId, childUid, dateId } = event.params;
+    const data = event.data.data();
+    const totalUsage = data.totalUsage || data.dailyUsage || 0;
+    const dailyLimit = data.dailyLimit || 240;
+    const allApps = data.allAppsUsage || [];
+
+    const { parents, childName } =
+      await getParentTokensAndChildName(familyId, childUid);
+
+    const alerts = [];
+
+    // 1) 과다 사용 감지 (제한의 150% 이상)
+    if (dailyLimit > 0 && totalUsage > dailyLimit * 1.5) {
+      const pct = Math.round((totalUsage / dailyLimit) * 100);
+      const fmtLimit = dailyLimit >= 60 ? `${Math.floor(dailyLimit/60)}h${dailyLimit%60}m` : `${dailyLimit}m`;
+      alerts.push({
+        type: "overuse",
+        severity: "warning",
+        title: "과다 사용",
+        titleEn: "Overuse",
+        description: `${childName}: 제한 시간의 ${pct}% 사용`,
+        descriptionEn: `${childName}: Used ${pct}% of time limit`,
+        pushTitleFn: (lang) => tr(lang, "behavior.overuseTitle"),
+        pushBodyFn: (lang) => tr(lang, "behavior.overuseBody", { name: childName, pct, limit: fmtLimit }),
+      });
+    }
+
+    // 2) 심야 사용 감지 (데이터에 lateNightUsage 필드가 있으면)
+    const lateUsage = data.lateNightMinutes || 0;
+    if (lateUsage > 10) {
+      alerts.push({
+        type: "lateNight",
+        severity: "warning",
+        title: "심야 사용",
+        titleEn: "Late Night Usage",
+        description: `${childName}: 심야 시간에 ${lateUsage}분 사용`,
+        descriptionEn: `${childName}: Used device for ${lateUsage}min late at night`,
+        pushTitleFn: (lang) => tr(lang, "behavior.lateNightTitle"),
+        pushBodyFn: (lang) => tr(lang, "behavior.lateNightBody", { name: childName, time: `${lateUsage}min` }),
+      });
+    }
+
+    // 3) 새로운 앱 감지 (이전 기록과 비교)
+    try {
+      const prevDate = new Date(dateId);
+      prevDate.setDate(prevDate.getDate() - 1);
+      const prevId = prevDate.toISOString().split("T")[0];
+      const prevSnap = await db.doc(`families/${familyId}/screentimeHistory/${childUid}/daily/${prevId}`).get();
+      if (prevSnap.exists) {
+        const prevApps = new Set((prevSnap.data().allAppsUsage || []).map(a => a.packageName || a.name));
+        const newApps = allApps.filter(a => !prevApps.has(a.packageName || a.name) && (a.usedMinutes || 0) > 5);
+        for (const app of newApps.slice(0, 3)) {
+          alerts.push({
+            type: "newApp",
+            severity: "info",
+            title: "새 앱 사용",
+            titleEn: "New App",
+            description: `${childName}: '${app.name || app.packageName}' 사용 시작`,
+            descriptionEn: `${childName}: Started using '${app.name || app.packageName}'`,
+            pushTitleFn: (lang) => tr(lang, "behavior.newAppTitle"),
+            pushBodyFn: (lang) => tr(lang, "behavior.newAppBody", { name: childName, app: app.name || app.packageName }),
+          });
+        }
+      }
+    } catch (e) {
+      // 이전 기록 없으면 무시
+    }
+
+    // Firestore에 알림 저장 + 부모에게 푸시
+    for (const alert of alerts) {
+      await db.collection(`families/${familyId}/behaviorAlerts`).add({
+        childUid,
+        childName,
+        type: alert.type,
+        severity: alert.severity,
+        title: alert.title,
+        titleEn: alert.titleEn,
+        description: alert.description,
+        descriptionEn: alert.descriptionEn,
+        date: dateId,
+        read: false,
+        createdAt: new Date(),
+      });
+
+      await sendPushToAllParents(parents, null, {
+        titleFn: alert.pushTitleFn,
+        bodyFn: alert.pushBodyFn,
+        data: { type: "behaviorAlert", familyId, childUid },
+      });
+    }
   }
 );

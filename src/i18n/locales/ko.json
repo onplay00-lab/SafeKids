@@ -30,6 +30,9 @@
   "fmt.hoursAgo": "{{n}}시간 전",
   "fmt.daysAgo": "{{n}}일 전",
 
+  "common.hour": "시간",
+  "common.min": "분",
+
   "tabs.home": "홈",
   "tabs.location": "위치",
   "tabs.screentime": "시간",
@@ -37,6 +40,7 @@
   "tabs.settings": "설정",
   "tabs.promise": "약속",
   "tabs.sos": "SOS",
+  "tabs.reports": "리포트",
 
   "parent.home.title": "SafeKids",
   "parent.home.familyNeeded": "가족 연결이 필요합니다",
@@ -66,6 +70,18 @@
   "parent.home.loudSignalSent": "전송 완료",
   "parent.home.loudSignalSentDesc": "{{name}}에게 큰소리 신호를 보냈습니다.",
   "parent.home.loudSignalFailed": "전송에 실패했습니다",
+  "parent.home.soundAround": "🎧 주변 소리 듣기",
+  "parent.home.soundAroundTitle": "🎧 주변 소리",
+  "parent.home.soundAroundMessage": "{{name}}의 주변 소리를 30초간 녹음할까요?",
+  "parent.home.soundAroundRequest": "녹음 요청",
+  "parent.home.soundAroundRequested": "요청됨",
+  "parent.home.soundAroundRecording": "녹음 중...",
+  "parent.home.soundAroundPlay": "▶ 녹음 재생",
+  "parent.home.soundAroundPlaying": "재생 중...",
+  "parent.home.soundAroundFailed": "녹음에 실패했습니다",
+  "parent.home.soundAroundNew": "새로 요청",
+  "parent.home.behaviorAlerts": "🔍 행동 분석 알림",
+  "parent.home.noBehaviorAlerts": "특이사항 없음",
 
   "parent.location.title": "위치",
   "parent.location.loading": "위치 불러오는 중...",
@@ -226,6 +242,7 @@
   "child.home.warnNotif5Body": "남은 시간 {{n}}분! 마무리하세요.",
   "child.home.lockNotifTitle": "🔒 화면 잠금",
   "child.home.lockNotifBody": "오늘 사용 시간을 모두 사용했어요.",
+  "child.home.soundRecording": "🎙️ 주변 소리 녹음 중... {{sec}}초",
 
   "child.sos.title": "긴급 알림",
   "child.sos.subtitle": "3초 길게 눌러서 부모님께 알림 전송",
@@ -334,5 +351,32 @@
   "dayLabels.3": "수",
   "dayLabels.4": "목",
   "dayLabels.5": "금",
-  "dayLabels.6": "토"
+  "dayLabels.6": "토",
+
+  "reports.title": "리포트",
+  "reports.days": "일",
+  "reports.daysUnit": "일",
+  "reports.summary": "요약 통계",
+  "reports.avgUsage": "일평균 사용",
+  "reports.maxUsage": "최대 사용",
+  "reports.daysOverLimit": "제한 초과일",
+  "reports.trend.up": "증가 추세",
+  "reports.trend.down": "감소 추세",
+  "reports.trend.stable": "유지",
+  "reports.mostUsedApp": "가장 많이 사용한 앱",
+  "reports.dailyChart": "일별 사용량",
+  "reports.appCategories": "앱 카테고리",
+  "reports.moodTrend": "감정 타임라인",
+  "reports.behaviorAlerts": "행동 분석 알림",
+  "reports.cat.entertainment": "엔터테인먼트",
+  "reports.cat.games": "게임",
+  "reports.cat.education": "교육",
+  "reports.cat.social": "소셜",
+  "reports.cat.tools": "도구",
+  "reports.cat.other": "기타",
+
+  "behavior.overuse": "과다 사용",
+  "behavior.lateNight": "심야 사용",
+  "behavior.newApp": "새 앱 감지",
+  "behavior.patternChange": "패턴 변화"
 }

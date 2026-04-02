@@ -17,6 +17,9 @@ import {
 import { subscribeAppBlocking, BLOCKABLE_APPS } from '../../src/services/appBlockingService';
 import { EMOTIONS, saveEmotionCheck, subscribeLatestEmotion } from '../../src/services/emotionService';
 import * as ExpoUsageStats from '../../modules/expo-usage-stats';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
+import { subscribePendingSoundRequest, updateSoundRequest } from '../../src/services/soundAroundService';
 
 const EXTRA_OPTIONS = [15, 30, 60];
 
@@ -47,8 +50,79 @@ export default function ChildHome() {
   const [blockingData, setBlockingData] = useState(null);
   const [currentEmotion, setCurrentEmotion] = useState(null);
   const [showEmotionPicker, setShowEmotionPicker] = useState(false);
+  const [soundRecording, setSoundRecording] = useState(false); // 녹음 중 여부
+  const [soundCountdown, setSoundCountdown] = useState(0);
   const prevRemaining = useRef(null);
   const warnedAt = useRef({ warn15: false, warn5: false, warnOver: false });
+
+  // Sound Around: 부모의 녹음 요청 감지 → 자동 녹음
+  useEffect(() => {
+    if (!user || !familyId) return;
+    const unsub = subscribePendingSoundRequest(familyId, user.uid, async (request) => {
+      if (!request || soundRecording) return;
+      try {
+        setSoundRecording(true);
+        setSoundCountdown(30);
+
+        // 오디오 권한 요청
+        const { granted } = await Audio.requestPermissionsAsync();
+        if (!granted) {
+          await updateSoundRequest(familyId, request.id, { status: 'failed', reason: 'permission_denied' });
+          setSoundRecording(false);
+          setSoundCountdown(0);
+          return;
+        }
+
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        });
+
+        const recording = new Audio.Recording();
+        await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+        await recording.startAsync();
+
+        // 카운트다운
+        const timer = setInterval(() => {
+          setSoundCountdown(prev => {
+            if (prev <= 1) { clearInterval(timer); return 0; }
+            return prev - 1;
+          });
+        }, 1000);
+
+        // 30초 후 녹음 중지
+        setTimeout(async () => {
+          clearInterval(timer);
+          try {
+            await recording.stopAndUnloadAsync();
+            const uri = recording.getURI();
+            if (uri) {
+              const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+              await updateSoundRequest(familyId, request.id, {
+                status: 'completed',
+                audioBase64: base64,
+                completedAt: new Date(),
+              });
+            } else {
+              await updateSoundRequest(familyId, request.id, { status: 'failed', reason: 'no_uri' });
+            }
+          } catch (e) {
+            console.error('녹음 완료 처리 실패:', e);
+            await updateSoundRequest(familyId, request.id, { status: 'failed', reason: e.message });
+          } finally {
+            setSoundRecording(false);
+            setSoundCountdown(0);
+          }
+        }, 30000);
+      } catch (e) {
+        console.error('녹음 시작 실패:', e);
+        await updateSoundRequest(familyId, request.id, { status: 'failed', reason: e.message });
+        setSoundRecording(false);
+        setSoundCountdown(0);
+      }
+    });
+    return () => unsub();
+  }, [user, familyId, soundRecording]);
 
   // 감정 체크인 구독
   useEffect(() => {
@@ -388,6 +462,14 @@ export default function ChildHome() {
         </View>
       </Modal>
 
+      {/* Sound Around 녹음 중 배너 */}
+      {soundRecording && (
+        <View style={s.soundBanner}>
+          <Text style={s.soundBannerEmoji}>🎙️</Text>
+          <Text style={s.soundBannerText}>{t('child.home.soundRecording', { sec: soundCountdown })}</Text>
+        </View>
+      )}
+
       {/* 위치 상태 */}
       <View style={s.locBar}>
         <Text style={s.locText}>
@@ -663,6 +745,9 @@ const s = StyleSheet.create({
   container:   { flex: 1, backgroundColor: Colors.white },
   content:     { padding: 20, paddingTop: 60, paddingBottom: 40 },
   title:       { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginBottom: 16 },
+  soundBanner:     { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EDE7F6', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#B39DDB' },
+  soundBannerEmoji:{ fontSize: 22, marginRight: 10 },
+  soundBannerText: { fontSize: 14, fontWeight: '600', color: '#4527A0' },
   locBar:      { backgroundColor: '#E8F5E9', borderRadius: 8, padding: 10, marginBottom: 12, alignItems: 'center' },
   locText:     { fontSize: 13, color: '#2E7D32' },
 

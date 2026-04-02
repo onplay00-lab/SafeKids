@@ -172,6 +172,26 @@ service cloud.firestore {
         allow read: if isFamilyMember(familyId);
         allow write: if isOwner(childUid) && isFamilyMember(familyId);
       }
+
+      // --- soundRequests ---
+      match /soundRequests/{requestId} {
+        allow read: if isFamilyMember(familyId);
+        // 부모가 요청 생성
+        allow create: if isFamilyParent(familyId);
+        // 자녀가 녹음 결과 업데이트 (completed/failed), 부모도 업데이트 가능
+        allow update: if isFamilyMember(familyId);
+        allow delete: if isFamilyParent(familyId);
+      }
+
+      // --- behaviorAlerts ---
+      match /behaviorAlerts/{alertId} {
+        allow read: if isFamilyMember(familyId);
+        // Cloud Functions에서 생성하므로 클라이언트에선 읽기/업데이트만
+        allow create: if isFamilyMember(familyId);
+        // 부모가 읽음 처리
+        allow update: if isFamilyParent(familyId);
+        allow delete: if isFamilyParent(familyId);
+      }
     }
 
     // 나머지 모든 문서 접근 차단
