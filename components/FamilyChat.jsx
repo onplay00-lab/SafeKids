@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Modal,
 } from 'react-native';
-import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { useTranslation } from 'react-i18next';
@@ -41,11 +41,24 @@ export default function FamilyChat() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
   const [playingId, setPlayingId] = useState(null);
+  const [senderName, setSenderName] = useState(user?.displayName || user?.email?.split('@')[0] || (role === 'parent' ? t('common.parent') : t('common.child')));
   const flatListRef = useRef(null);
   const soundRef = useRef(null);
   const recordTimerRef = useRef(null);
 
-  const senderName = user?.displayName || user?.email?.split('@')[0] || (role === 'parent' ? t('common.parent') : t('common.child'));
+  // childNames 맵에서 부모가 설정한 이름 가져오기
+  useEffect(() => {
+    if (!familyId || !user) return;
+    (async () => {
+      try {
+        const famDoc = await getDoc(doc(db, 'families', familyId));
+        if (famDoc.exists()) {
+          const customName = (famDoc.data().childNames || {})[user.uid];
+          if (customName) setSenderName(customName);
+        }
+      } catch {}
+    })();
+  }, [familyId, user]);
 
   function getStickerLabel(id) {
     return t(`chat.sticker.${id}`);
@@ -324,7 +337,7 @@ export default function FamilyChat() {
   return (
     <KeyboardAvoidingView
       style={s.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={90}
     >
       <FlatList

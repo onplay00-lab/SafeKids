@@ -587,7 +587,7 @@ export default function ChildHome() {
 
       {/* 요청 모달 */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
-        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={s.modalBox}>
             <Text style={s.modalTitle}>{t('child.home.modalTitle')}</Text>
 

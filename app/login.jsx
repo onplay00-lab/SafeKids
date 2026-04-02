@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
@@ -151,7 +151,8 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={s.container}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
       <View style={s.logoArea}>
         <View style={s.logoCircle}><Text style={s.logoText}>SK</Text></View>
         <Text style={s.appName}>SafeKids</Text>
@@ -196,12 +197,13 @@ export default function LoginScreen() {
       <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} style={s.switchBtn}>
         <Text style={s.switchText}>{isSignUp ? t('auth.switchToLogin') : t('auth.switchToSignup')}</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const s = StyleSheet.create({
-  container:{flex:1,backgroundColor:"#fff",paddingHorizontal:24,justifyContent:"center"},
+  container:{flexGrow:1,backgroundColor:"#fff",paddingHorizontal:24,justifyContent:"center"},
   logoArea:{alignItems:"center",marginBottom:36},
   logoCircle:{width:64,height:64,borderRadius:32,backgroundColor:"#E6F1FB",alignItems:"center",justifyContent:"center",marginBottom:12},
   logoText:{fontSize:22,fontWeight:"600",color:"#185FA5"},
