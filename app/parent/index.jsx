@@ -180,12 +180,13 @@ export default function ParentHome() {
   }, [familyId]);
 
   // 선택된 자녀의 Sound Around + 행동 알림 구독
+  const selectedChild = children[selectedIdx];
   useEffect(() => {
     if (!familyId || !selectedChild) return;
     const unsub1 = subscribeLatestSoundRequest(familyId, selectedChild.uid, setSoundRequest);
     const unsub2 = subscribeBehaviorAlerts(familyId, selectedChild.uid, setBehaviorAlerts);
     return () => { unsub1(); unsub2(); };
-  }, [familyId, selectedChild]);
+  }, [familyId, selectedChild?.uid]);
 
   async function handleSoundAround(child) {
     Alert.alert(
@@ -193,10 +194,10 @@ export default function ParentHome() {
       t('parent.home.soundAroundMessage', { name: child.name }),
       [
         { text: t('common.cancel'), style: 'cancel' },
-        { text: t('parent.home.soundAroundSend'), onPress: async () => {
+        { text: t('parent.home.soundAroundRequest'), onPress: async () => {
           try {
             await requestSoundAround(familyId, child.uid, 30);
-            Alert.alert(t('parent.home.soundAroundSent'));
+            Alert.alert(t('parent.home.soundAroundRequested'));
           } catch (e) { Alert.alert(t('common.error')); }
         }},
       ]
@@ -234,8 +235,6 @@ export default function ParentHome() {
       ]
     );
   }
-
-  const selectedChild = children[selectedIdx];
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
