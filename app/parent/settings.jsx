@@ -235,15 +235,16 @@ export default function ParentSettings() {
           <Text style={s.codeLabel}>{t('parent.settings.shareCode')}</Text>
           <Text style={s.codeText}>{inviteCode}</Text>
           <Text style={s.codeHint}>{t('parent.settings.codeHint')}</Text>
+          <Text style={s.codeHintParent}>{t('parent.settings.codeHintParent')}</Text>
         </View>
       ) : (
         <TouchableOpacity style={s.addBtn} onPress={handleShowInviteCode} disabled={loading}>
-          {loading ? <ActivityIndicator color={Colors.primary} /> : <Text style={s.addBtnText}>{t('parent.settings.addChild')}</Text>}
+          {loading ? <ActivityIndicator color={Colors.primary} /> : <Text style={s.addBtnText}>{t('parent.settings.addMember')}</Text>}
         </TouchableOpacity>
       )}
 
       {/* 부모 목록 */}
-      {parentList.length > 1 && (
+      {parentList.length > 0 && (
         <>
           <Text style={[s.section, {marginTop:24}]}>{t('parent.settings.parentAccounts')}</Text>
           <View style={s.card}>
@@ -256,6 +257,9 @@ export default function ParentSettings() {
               </View>
             ))}
           </View>
+          {parentList.length === 1 && (
+            <Text style={s.parentAddHint}>{t('parent.settings.parentAddHint')}</Text>
+          )}
         </>
       )}
 
@@ -466,6 +470,8 @@ const s = StyleSheet.create({
   codeLabel:        { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
   codeText:         { fontSize: 36, fontWeight: '700', color: Colors.primary, letterSpacing: 6, marginBottom: 8 },
   codeHint:         { fontSize: 12, color: Colors.textHint },
+  codeHintParent:   { fontSize: 12, color: Colors.primary, marginTop: 6, fontWeight: '500' },
+  parentAddHint:    { fontSize: 12, color: Colors.textHint, marginTop: 8, textAlign: 'center' },
   card:             { backgroundColor: Colors.bg, borderRadius: 12, padding: 14 },
   emptyHint:        { fontSize: 13, color: Colors.textHint, textAlign: 'center', paddingVertical: 8 },
   promiseRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: Colors.border },
