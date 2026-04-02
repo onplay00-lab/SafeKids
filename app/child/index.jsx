@@ -6,6 +6,7 @@ import {
 import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
 import * as Notifications from 'expo-notifications';
+import { useTranslation } from 'react-i18next';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { startLocationTracking } from '../../src/services/locationService';
@@ -17,17 +18,19 @@ import { subscribeAppBlocking, BLOCKABLE_APPS } from '../../src/services/appBloc
 import { EMOTIONS, saveEmotionCheck, subscribeLatestEmotion } from '../../src/services/emotionService';
 import * as ExpoUsageStats from '../../modules/expo-usage-stats';
 
-function fmt(m) {
-  const h = Math.floor(m / 60);
-  const mm = m % 60;
-  return `${String(h).padStart(2, '0')}시간 ${String(mm).padStart(2, '0')}분`;
-}
-
 const EXTRA_OPTIONS = [15, 30, 60];
 
 export default function ChildHome() {
   const { user, familyId } = useAuth();
-  const [locStatus, setLocStatus]     = useState('위치 확인 중...');
+  const { t } = useTranslation();
+
+  function fmt(m) {
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    if (h > 0) return t('fmt.hours', { h, m: String(mm).padStart(2, '0') });
+    return t('fmt.minutes', { m: mm });
+  }
+  const [locStatus, setLocStatus]     = useState(null);
   const [screenData, setScreenData]   = useState(null);
   const [needPermission, setNeedPermission] = useState(false);
   const [trackingMode, setTrackingMode] = useState(null);
@@ -63,7 +66,14 @@ export default function ChildHome() {
 
   async function handleEmotionSelect(emotionId) {
     if (!user || !familyId) return;
-    const name = user.displayName || user.email?.split('@')[0] || '자녀';
+    let name = user.displayName || user.email?.split('@')[0] || t('common.child');
+    try {
+      const famDoc = await getDoc(doc(db, 'families', familyId));
+      if (famDoc.exists()) {
+        const customName = (famDoc.data().childNames || {})[user.uid];
+        if (customName) name = customName;
+      }
+    } catch {}
     await saveEmotionCheck(familyId, user.uid, name, emotionId);
     setShowEmotionPicker(false);
   }
@@ -124,7 +134,7 @@ export default function ChildHome() {
           (isInBlockSchedule() && blockedPackages.has(currentPkg));
 
         if (shouldBlock) {
-          await ExpoUsageStats.showLockOverlay('부모님이 이 앱의 사용을 차단했습니다');
+          await ExpoUsageStats.showLockOverlay(t('child.home.appBlockMessage'));
         }
       } catch (e) {}
     }, 3000);
@@ -168,11 +178,11 @@ export default function ChildHome() {
 
     if (rem > 0 && rem <= 15 && !warnedAt.current.warn15) {
       warnedAt.current.warn15 = true;
-      sendWarning('⏰ 시간 알림', `남은 시간 ${rem}분! 곧 화면이 잠깁니다.`);
+      sendWarning(t('child.home.warnNotif15Title'), t('child.home.warnNotif15Body', { n: rem }));
     }
     if (rem > 0 && rem <= 5 && !warnedAt.current.warn5) {
       warnedAt.current.warn5 = true;
-      sendWarning('⚠️ 시간 부족', `남은 시간 ${rem}분! 마무리하세요.`);
+      sendWarning(t('child.home.warnNotif5Title'), t('child.home.warnNotif5Body', { n: rem }));
     }
 
     if (Platform.OS !== 'android') { prevRemaining.current = rem; return; }
@@ -185,10 +195,10 @@ export default function ChildHome() {
         if (rem <= 0) {
           if (!warnedAt.current.warnOver) {
             warnedAt.current.warnOver = true;
-            sendWarning('🔒 화면 잠금', '오늘 사용 시간을 모두 사용했어요.');
+            sendWarning(t('child.home.lockNotifTitle'), t('child.home.lockNotifBody'));
           }
           await ExpoUsageStats.showLockOverlay(
-            `부모님이 설정한 ${fmt(limit)}을 모두 사용했어요`
+            t('child.home.timeOverOverlay', { limit: fmt(limit) })
           );
         } else {
           // 시간이 남아있으면 (추가 시간 승인 등) 오버레이 해제
@@ -244,11 +254,11 @@ export default function ChildHome() {
   useEffect(() => {
     startLocationTracking()
       .then((r) => {
-        if (r === 'active')               setLocStatus('📍 위치 추적 활성화됨');
-        else if (r === 'foreground-only') setLocStatus('📍 앱 사용 중에만 위치 확인');
-        else                              setLocStatus('⚠️ 위치 권한이 필요합니다');
+        if (r === 'active')               setLocStatus('active');
+        else if (r === 'foreground-only') setLocStatus('foreground');
+        else                              setLocStatus('noPermission');
       })
-      .catch(() => setLocStatus('⚠️ 위치 서비스 오류'));
+      .catch(() => setLocStatus('error'));
   }, []);
 
   // 스크린타임 초기화 + 추적
@@ -298,9 +308,18 @@ export default function ChildHome() {
     if (!familyId || !user || !reason.trim() || !isValidTime) return;
     setSending(true);
     try {
+      // 부모가 설정한 이름 우선 사용
+      let childName = user.displayName || user.email?.split('@')[0] || t('common.child');
+      try {
+        const famDoc = await getDoc(doc(db, 'families', familyId));
+        if (famDoc.exists()) {
+          const customName = (famDoc.data().childNames || {})[user.uid];
+          if (customName) childName = customName;
+        }
+      } catch {}
       await addDoc(collection(db, 'families', familyId, 'timeRequests'), {
         childUid: user.uid,
-        childName: user.displayName || user.email?.split('@')[0] || '자녀',
+        childName,
         reason: reason.trim(),
         extraMinutes: finalExtraMin,
         status: 'pending',
@@ -330,21 +349,21 @@ export default function ChildHome() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <Text style={s.title}>SafeKids</Text>
+      <Text style={s.title}>{t('child.home.title')}</Text>
 
       {/* 감정 체크인 */}
       <TouchableOpacity style={s.emotionBar} onPress={() => setShowEmotionPicker(true)}>
         {currentEmotion && currentEmotion.date === new Date().toISOString().split('T')[0] ? (
           <>
             <Text style={s.emotionEmoji}>{currentEmotion.emoji}</Text>
-            <Text style={s.emotionLabel}>오늘 기분: {currentEmotion.label}</Text>
-            <Text style={s.emotionChange}>변경</Text>
+            <Text style={s.emotionLabel}>{t('child.home.emotionToday', { label: t(`emotions.${currentEmotion.emotionId}`) })}</Text>
+            <Text style={s.emotionChange}>{t('child.home.emotionChange')}</Text>
           </>
         ) : (
           <>
             <Text style={s.emotionEmoji}>🤔</Text>
-            <Text style={s.emotionLabel}>오늘 기분은 어때요?</Text>
-            <Text style={s.emotionChange}>선택</Text>
+            <Text style={s.emotionLabel}>{t('child.home.emotionAsk')}</Text>
+            <Text style={s.emotionChange}>{t('child.home.emotionSelect')}</Text>
           </>
         )}
       </TouchableOpacity>
@@ -353,17 +372,17 @@ export default function ChildHome() {
       <Modal visible={showEmotionPicker} transparent animationType="fade" onRequestClose={() => setShowEmotionPicker(false)}>
         <View style={s.emotionOverlay}>
           <View style={s.emotionCard}>
-            <Text style={s.emotionTitle}>오늘 기분은 어때요?</Text>
+            <Text style={s.emotionTitle}>{t('child.home.emotionTitle')}</Text>
             <View style={s.emotionGrid}>
               {EMOTIONS.map((em) => (
                 <TouchableOpacity key={em.id} style={[s.emotionItem, { backgroundColor: em.color }]} onPress={() => handleEmotionSelect(em.id)}>
                   <Text style={s.emotionItemEmoji}>{em.emoji}</Text>
-                  <Text style={[s.emotionItemLabel, { color: em.textColor }]}>{em.label}</Text>
+                  <Text style={[s.emotionItemLabel, { color: em.textColor }]}>{t(`emotions.${em.id}`)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
             <TouchableOpacity style={s.emotionClose} onPress={() => setShowEmotionPicker(false)}>
-              <Text style={s.emotionCloseText}>나중에</Text>
+              <Text style={s.emotionCloseText}>{t('child.home.emotionLater')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -371,18 +390,22 @@ export default function ChildHome() {
 
       {/* 위치 상태 */}
       <View style={s.locBar}>
-        <Text style={s.locText}>{locStatus}</Text>
+        <Text style={s.locText}>
+          {locStatus === 'active' ? t('child.home.locationActive')
+            : locStatus === 'foreground' ? t('child.home.locationForeground')
+            : locStatus === 'noPermission' ? t('child.home.locationPermNeeded')
+            : locStatus === 'error' ? t('child.home.locationError')
+            : t('child.home.locationChecking')}
+        </Text>
       </View>
 
       {/* 권한 안내 배너 */}
       {needPermission && Platform.OS === 'android' && (
         <View style={s.permBanner}>
-          <Text style={s.permTitle}>📊 앱 사용 시간 권한이 필요해요</Text>
-          <Text style={s.permDesc}>
-            실제 앱별 사용 시간을 측정하려면{'\n'}기기 설정에서 권한을 허용해 주세요.
-          </Text>
+          <Text style={s.permTitle}>{t('child.home.permTitle')}</Text>
+          <Text style={s.permDesc}>{t('child.home.permDesc')}</Text>
           <TouchableOpacity style={s.permBtn} onPress={handleGrantPermission}>
-            <Text style={s.permBtnText}>설정에서 허용하기</Text>
+            <Text style={s.permBtnText}>{t('child.home.permBtn')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -390,16 +413,14 @@ export default function ChildHome() {
       {/* 오버레이 권한 배너 */}
       {needOverlayPerm && Platform.OS === 'android' && (
         <View style={s.permBanner}>
-          <Text style={s.permTitle}>🔒 화면 잠금 권한이 필요해요</Text>
-          <Text style={s.permDesc}>
-            사용 시간 초과 시 화면 잠금을 위해{'\n'}'다른 앱 위에 표시' 권한을 허용해 주세요.
-          </Text>
+          <Text style={s.permTitle}>{t('child.home.overlayPermTitle')}</Text>
+          <Text style={s.permDesc}>{t('child.home.overlayPermDesc')}</Text>
           <TouchableOpacity style={s.permBtn} onPress={async () => {
             try {
               await ExpoUsageStats.requestOverlayPermission();
             } catch (e) {}
           }}>
-            <Text style={s.permBtnText}>설정에서 허용하기</Text>
+            <Text style={s.permBtnText}>{t('child.home.permBtn')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -408,7 +429,7 @@ export default function ChildHome() {
       {trackingMode && (
         <View style={[s.modeBadge, trackingMode === 'native' ? s.modeNative : s.modeFallback]}>
           <Text style={s.modeText}>
-            {trackingMode === 'native' ? '✅ 실제 앱 사용량 측정 중' : '⏱ SafeKids 앱 사용시간만 측정'}
+            {trackingMode === 'native' ? t('child.home.nativeMode') : t('child.home.fallbackMode')}
           </Text>
         </View>
       )}
@@ -418,14 +439,14 @@ export default function ChildHome() {
         <View style={[s.warnBanner, remaining <= 5 && s.warnBannerUrgent]}>
           <Text style={s.warnBannerText}>
             {remaining <= 5
-              ? `⚠️ 남은 시간 ${remaining}분! 곧 화면이 잠깁니다.`
-              : `⏰ 남은 시간 ${remaining}분입니다. 마무리하세요!`}
+              ? t('child.home.warnTimeUrgent', { n: remaining })
+              : t('child.home.warnTime', { n: remaining })}
           </Text>
         </View>
       )}
       {remaining <= 0 && (
         <View style={s.warnBannerOver}>
-          <Text style={s.warnBannerOverText}>🔒 오늘 사용 시간을 모두 사용했어요</Text>
+          <Text style={s.warnBannerOverText}>{t('child.home.timeOver')}</Text>
         </View>
       )}
 
@@ -436,15 +457,15 @@ export default function ChildHome() {
           borderWidth: remaining <= 15 ? 4 : 3,
         }]}>
           <Text style={[s.timerVal, remaining <= 0 && { color: Colors.danger }, remaining > 0 && remaining <= 15 && { color: '#E65100' }]}>{fmt(remaining)}</Text>
-          <Text style={s.timerLabel}>남은 시간</Text>
+          <Text style={s.timerLabel}>{t('child.home.remaining')}</Text>
         </View>
-        <Text style={s.timerSub}>오늘 {fmt(dailyUsage)} 사용 / 제한 {fmt(dailyLimit)}</Text>
+        <Text style={s.timerSub}>{t('child.home.todayUsage', { used: fmt(dailyUsage), limit: fmt(dailyLimit) })}</Text>
       </View>
 
       {/* 앱별 사용시간 */}
       {appEntries.length > 0 && (
         <View style={s.card}>
-          <Text style={s.cardTitle}>앱별 사용시간</Text>
+          <Text style={s.cardTitle}>{t('child.home.appUsage')}</Text>
           {appEntries.map(([key, app], i) => {
             const usedSec = app.usedSeconds || app.used * 60 || 0;
             const usedMin = Math.floor(usedSec / 60);
@@ -466,7 +487,7 @@ export default function ChildHome() {
                     <View style={[s.barFill, { width: `${pct}%`, backgroundColor: warn ? '#BA7517' : Colors.primary }]} />
                   </View>
                 ) : (
-                  <Text style={s.noLimit}>제한 없음</Text>
+                  <Text style={s.noLimit}>{t('child.home.noLimit')}</Text>
                 )}
               </View>
             );
@@ -477,7 +498,7 @@ export default function ChildHome() {
       {/* 오늘 사용한 앱 (전체) */}
       {(screenData?.allAppsUsage || []).length > 0 && (
         <View style={s.card}>
-          <Text style={s.cardTitle}>📱 오늘 사용한 앱</Text>
+          <Text style={s.cardTitle}>{t('child.home.todayApps')}</Text>
           {screenData.allAppsUsage.map((app, i) => (
             <View key={app.packageName} style={[s.allAppRow, i > 0 && { borderTopWidth: 0.5, borderTopColor: Colors.border }]}>
               <Text style={s.allAppName}>{app.name}</Text>
@@ -490,7 +511,7 @@ export default function ChildHome() {
       {/* 차단된 앱 안내 */}
       {blockingData && Object.entries(blockingData.blockedApps || {}).some(([, v]) => v) && (
         <View style={s.blockBanner}>
-          <Text style={s.blockBannerTitle}>🚫 차단된 앱</Text>
+          <Text style={s.blockBannerTitle}>{t('child.home.blockedApps')}</Text>
           <View style={s.blockAppList}>
             {Object.entries(blockingData.blockedApps || {}).filter(([, v]) => v).map(([key]) => (
               <View key={key} style={s.blockAppChip}>
@@ -502,7 +523,7 @@ export default function ChildHome() {
           </View>
           {blockingData.schedule?.enabled && (
             <Text style={s.blockSchedText}>
-              🕐 차단 시간: {blockingData.schedule.start} ~ {blockingData.schedule.end}
+              {t('child.home.blockSchedule', { start: blockingData.schedule.start, end: blockingData.schedule.end })}
             </Text>
           )}
         </View>
@@ -510,35 +531,35 @@ export default function ChildHome() {
 
       {/* 추가 시간 요청 */}
       <View style={s.bonusCard}>
-        <Text style={s.bonusTitle}>시간이 더 필요해요?</Text>
+        <Text style={s.bonusTitle}>{t('child.home.bonusTitle')}</Text>
 
         {/* 최근 요청 상태 배너 */}
         {hasPending && (
           <View style={[s.reqBadge, s.reqPending]}>
-            <Text style={s.reqBadgeText}>⏳ 부모님께 요청 중... 답변을 기다려요</Text>
+            <Text style={s.reqBadgeText}>{t('child.home.pendingBadge')}</Text>
           </View>
         )}
         {hasApproved && (
           <View style={[s.reqBadge, s.reqApproved]}>
             <Text style={s.reqBadgeText}>
-              ✅ 승인! +{lastRequest.extraMinutes}분 추가됐어요
+              {t('child.home.approvedBadge', { min: lastRequest.extraMinutes })}
             </Text>
           </View>
         )}
         {hasRejected && (
           <View style={[s.reqBadge, s.reqRejected]}>
-            <Text style={s.reqBadgeText}>❌ 이번엔 거절됐어요</Text>
+            <Text style={s.reqBadgeText}>{t('child.home.rejectedBadge')}</Text>
           </View>
         )}
 
-        <Text style={s.bonusDesc}>이유를 작성하고 부모님께 요청하세요</Text>
+        <Text style={s.bonusDesc}>{t('child.home.bonusDesc')}</Text>
         <TouchableOpacity
           style={[s.bonusBtn, hasPending && s.bonusBtnDisabled]}
           onPress={() => !hasPending && setModalVisible(true)}
           disabled={hasPending}
         >
           <Text style={[s.bonusBtnText, hasPending && s.bonusBtnTextDisabled]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-            {hasPending ? '요청 대기 중' : '추가 시간 요청'}
+            {hasPending ? t('child.home.requestPending') : t('child.home.requestMore')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -547,20 +568,20 @@ export default function ChildHome() {
       <Modal visible={remaining <= 0 && screenData !== null} transparent={false} animationType="fade" onRequestClose={() => {}}>
         <View style={s.lockOverlay}>
           <Text style={s.lockIcon}>⏰</Text>
-          <Text style={s.lockTitle}>오늘 사용 시간이{'\n'}끝났어요!</Text>
+          <Text style={s.lockTitle}>{t('child.home.lockTitle')}</Text>
           <Text style={s.lockDesc}>
-            부모님이 설정한 {fmt(dailyLimit)}을{'\n'}모두 사용했어요
+            {t('child.home.lockDesc', { limit: fmt(dailyLimit) })}
           </Text>
           {hasPending ? (
             <View style={s.lockPendingBox}>
-              <Text style={s.lockPendingText}>⏳ 부모님께 요청 중...{'\n'}답변을 기다려주세요</Text>
+              <Text style={s.lockPendingText}>{t('child.home.lockPending')}</Text>
             </View>
           ) : (
             <TouchableOpacity style={s.lockBtn} onPress={() => setModalVisible(true)}>
-              <Text style={s.lockBtnText}>추가 시간 요청하기</Text>
+              <Text style={s.lockBtnText}>{t('child.home.lockBtn')}</Text>
             </TouchableOpacity>
           )}
-          <Text style={s.lockHint}>부모님이 승인하면 자동으로 돌아가요</Text>
+          <Text style={s.lockHint}>{t('child.home.lockHint')}</Text>
         </View>
       </Modal>
 
@@ -568,10 +589,10 @@ export default function ChildHome() {
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={s.modalBox}>
-            <Text style={s.modalTitle}>추가 시간 요청</Text>
+            <Text style={s.modalTitle}>{t('child.home.modalTitle')}</Text>
 
             {/* 추가 시간 선택 */}
-            <Text style={s.modalLabel}>얼마나 필요해요?</Text>
+            <Text style={s.modalLabel}>{t('child.home.howMuch')}</Text>
             <View style={s.optionRow}>
               {EXTRA_OPTIONS.map((min) => (
                 <TouchableOpacity
@@ -580,7 +601,7 @@ export default function ChildHome() {
                   onPress={() => { setExtraMin(min); setIsCustom(false); }}
                 >
                   <Text style={[s.optionText, !isCustom && extraMin === min && s.optionTextActive]} numberOfLines={1} adjustsFontSizeToFit>
-                    {min}분
+                    {min}{t('common.minutes')}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -588,29 +609,29 @@ export default function ChildHome() {
                 style={[s.optionBtn, isCustom && s.optionBtnActive]}
                 onPress={() => setIsCustom(true)}
               >
-                <Text style={[s.optionText, isCustom && s.optionTextActive]}>기타</Text>
+                <Text style={[s.optionText, isCustom && s.optionTextActive]}>{t('child.home.custom')}</Text>
               </TouchableOpacity>
             </View>
             {isCustom && (
               <View style={s.customRow}>
                 <TextInput
                   style={s.customInput}
-                  placeholder="분 입력"
+                  placeholder={t('child.home.customPlaceholder')}
                   placeholderTextColor={Colors.textHint}
                   keyboardType="number-pad"
                   maxLength={3}
                   value={customMin}
                   onChangeText={setCustomMin}
                 />
-                <Text style={s.customUnit}>분</Text>
+                <Text style={s.customUnit}>{t('common.minutes')}</Text>
               </View>
             )}
 
             {/* 이유 입력 */}
-            <Text style={s.modalLabel}>이유를 알려주세요</Text>
+            <Text style={s.modalLabel}>{t('child.home.reasonLabel')}</Text>
             <TextInput
               style={s.textarea}
-              placeholder="예) 숙제 때문에 유튜브를 더 봐야 해요"
+              placeholder={t('child.home.reasonPlaceholder')}
               placeholderTextColor={Colors.textHint}
               multiline
               numberOfLines={3}
@@ -621,14 +642,14 @@ export default function ChildHome() {
             {/* 버튼 */}
             <View style={s.modalBtns}>
               <TouchableOpacity style={s.cancelBtn} onPress={() => { setModalVisible(false); setReason(''); setExtraMin(30); setCustomMin(''); setIsCustom(false); }}>
-                <Text style={s.cancelBtnText}>취소</Text>
+                <Text style={s.cancelBtnText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.submitBtn, (!reason.trim() || sending || !isValidTime) && s.submitBtnDisabled]}
                 onPress={handleSendRequest}
                 disabled={!reason.trim() || sending || !isValidTime}
               >
-                <Text style={s.submitBtnText}>{sending ? '전송 중...' : '요청 보내기'}</Text>
+                <Text style={s.submitBtnText}>{sending ? t('child.home.sending') : t('child.home.sendRequest')}</Text>
               </TouchableOpacity>
             </View>
           </View>

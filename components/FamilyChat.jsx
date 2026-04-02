@@ -6,31 +6,33 @@ import {
 import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
+import { useTranslation } from 'react-i18next';
 import { db } from '../constants/firebase';
 import { Colors } from '../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 
 const STICKERS = [
-  { id: 'love', emoji: '❤️', label: '사랑해' },
-  { id: 'thumbsup', emoji: '👍', label: '좋아요' },
-  { id: 'laugh', emoji: '😂', label: '웃겨' },
-  { id: 'hug', emoji: '🤗', label: '안아줘' },
-  { id: 'star', emoji: '⭐', label: '최고' },
-  { id: 'home', emoji: '🏠', label: '집에 갈게' },
-  { id: 'food', emoji: '🍕', label: '배고파' },
-  { id: 'sleep', emoji: '😴', label: '졸려' },
-  { id: 'study', emoji: '📚', label: '공부중' },
-  { id: 'play', emoji: '⚽', label: '놀자' },
-  { id: 'sorry', emoji: '🙏', label: '미안해' },
-  { id: 'ok', emoji: '👌', label: '알겠어' },
-  { id: 'miss', emoji: '🥺', label: '보고싶어' },
-  { id: 'angry', emoji: '😤', label: '화나' },
-  { id: 'happy', emoji: '😊', label: '행복해' },
-  { id: 'cry', emoji: '😢', label: '슬퍼' },
+  { id: 'love', emoji: '❤️' },
+  { id: 'thumbsup', emoji: '👍' },
+  { id: 'laugh', emoji: '😂' },
+  { id: 'hug', emoji: '🤗' },
+  { id: 'star', emoji: '⭐' },
+  { id: 'home', emoji: '🏠' },
+  { id: 'food', emoji: '🍕' },
+  { id: 'sleep', emoji: '😴' },
+  { id: 'study', emoji: '📚' },
+  { id: 'play', emoji: '⚽' },
+  { id: 'sorry', emoji: '🙏' },
+  { id: 'ok', emoji: '👌' },
+  { id: 'miss', emoji: '🥺' },
+  { id: 'angry', emoji: '😤' },
+  { id: 'happy', emoji: '😊' },
+  { id: 'cry', emoji: '😢' },
 ];
 
 export default function FamilyChat() {
   const { user, familyId, role } = useAuth();
+  const { t } = useTranslation();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -43,7 +45,11 @@ export default function FamilyChat() {
   const soundRef = useRef(null);
   const recordTimerRef = useRef(null);
 
-  const senderName = user?.displayName || user?.email?.split('@')[0] || (role === 'parent' ? '부모' : '자녀');
+  const senderName = user?.displayName || user?.email?.split('@')[0] || (role === 'parent' ? t('common.parent') : t('common.child'));
+
+  function getStickerLabel(id) {
+    return t(`chat.sticker.${id}`);
+  }
 
   useEffect(() => {
     if (!familyId) return;
@@ -61,7 +67,6 @@ export default function FamilyChat() {
     return unsub;
   }, [familyId]);
 
-  // Cleanup sound on unmount
   useEffect(() => {
     return () => {
       if (soundRef.current) {
@@ -104,7 +109,7 @@ export default function FamilyChat() {
         type: 'sticker',
         stickerId: sticker.id,
         stickerEmoji: sticker.emoji,
-        stickerLabel: sticker.label,
+        stickerLabel: getStickerLabel(sticker.id),
         createdAt: serverTimestamp(),
       });
     } catch (e) {
@@ -150,7 +155,6 @@ export default function FamilyChat() {
 
       if (!uri || recordDuration < 1) return;
 
-      // Read the audio file as base64
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64,
       });
@@ -167,7 +171,6 @@ export default function FamilyChat() {
       });
       setSending(false);
 
-      // Clean up temp file
       try { await FileSystem.deleteAsync(uri); } catch {}
     } catch (e) {
       console.error('녹음 저장 실패:', e);
@@ -189,7 +192,6 @@ export default function FamilyChat() {
 
   async function handlePlayVoice(item) {
     try {
-      // Stop any currently playing audio
       if (soundRef.current) {
         await soundRef.current.unloadAsync();
         soundRef.current = null;
@@ -206,7 +208,6 @@ export default function FamilyChat() {
         playsInSilentModeIOS: true,
       });
 
-      // Write base64 to temp file and play
       const tempUri = FileSystem.cacheDirectory + `voice_${item.id}.m4a`;
       await FileSystem.writeAsStringAsync(tempUri, item.voiceBase64, {
         encoding: FileSystem.EncodingType.Base64,
@@ -238,14 +239,13 @@ export default function FamilyChat() {
 
   function formatDuration(sec) {
     const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${String(s).padStart(2, '0')}`;
+    const s2 = sec % 60;
+    return `${m}:${String(s2).padStart(2, '0')}`;
   }
 
   function renderMessage({ item }) {
     const isMe = item.senderUid === user?.uid;
 
-    // Sticker message
     if (item.type === 'sticker') {
       return (
         <View style={[s.msgRow, isMe && s.msgRowMe]}>
@@ -258,7 +258,7 @@ export default function FamilyChat() {
             {!isMe && <Text style={s.msgSender}>{item.senderName}</Text>}
             <View style={s.stickerBubble}>
               <Text style={s.stickerEmoji}>{item.stickerEmoji}</Text>
-              <Text style={s.stickerLabel}>{item.stickerLabel}</Text>
+              <Text style={s.stickerLabel}>{getStickerLabel(item.stickerId) || item.stickerLabel}</Text>
             </View>
             <Text style={[s.msgTime, isMe && s.msgTimeMe]}>{formatTime(item.createdAt)}</Text>
           </View>
@@ -266,7 +266,6 @@ export default function FamilyChat() {
       );
     }
 
-    // Voice message
     if (item.type === 'voice') {
       const isPlaying = playingId === item.id;
       return (
@@ -304,7 +303,6 @@ export default function FamilyChat() {
       );
     }
 
-    // Text message (default)
     return (
       <View style={[s.msgRow, isMe && s.msgRowMe]}>
         {!isMe && (
@@ -338,33 +336,30 @@ export default function FamilyChat() {
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
       />
 
-      {/* Sticker Panel */}
       {showStickers && (
         <View style={s.stickerPanel}>
           {STICKERS.map((st) => (
             <TouchableOpacity key={st.id} style={s.stickerItem} onPress={() => handleSendSticker(st)}>
               <Text style={s.stickerItemEmoji}>{st.emoji}</Text>
-              <Text style={s.stickerItemLabel}>{st.label}</Text>
+              <Text style={s.stickerItemLabel}>{getStickerLabel(st.id)}</Text>
             </TouchableOpacity>
           ))}
         </View>
       )}
 
-      {/* Recording UI */}
       {isRecording && (
         <View style={s.recordingBar}>
           <View style={s.recordingDot} />
-          <Text style={s.recordingText}>녹음 중 {formatDuration(recordDuration)}</Text>
+          <Text style={s.recordingText}>{t('chat.recording', { duration: formatDuration(recordDuration) })}</Text>
           <TouchableOpacity style={s.recordCancelBtn} onPress={handleCancelRecording}>
-            <Text style={s.recordCancelText}>취소</Text>
+            <Text style={s.recordCancelText}>{t('common.cancel')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={s.recordStopBtn} onPress={handleStopRecording}>
-            <Text style={s.recordStopText}>전송</Text>
+            <Text style={s.recordStopText}>{t('common.send')}</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Input Row */}
       {!isRecording && (
         <View style={s.inputRow}>
           <TouchableOpacity
@@ -384,8 +379,8 @@ export default function FamilyChat() {
           <TextInput
             style={s.input}
             value={text}
-            onChangeText={(t) => { setText(t); if (showStickers) setShowStickers(false); }}
-            placeholder="메시지를 입력하세요"
+            onChangeText={(t2) => { setText(t2); if (showStickers) setShowStickers(false); }}
+            placeholder={t('chat.placeholder')}
             placeholderTextColor={Colors.textHint}
             multiline
             maxLength={500}
@@ -400,7 +395,7 @@ export default function FamilyChat() {
             {sending ? (
               <ActivityIndicator size="small" color={Colors.white} />
             ) : (
-              <Text style={s.sendBtnText}>전송</Text>
+              <Text style={s.sendBtnText}>{t('common.send')}</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -428,7 +423,6 @@ const s = StyleSheet.create({
   msgTime: { fontSize: 10, color: Colors.textHint, marginTop: 2 },
   msgTimeMe: { textAlign: 'right' },
 
-  // Input
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', padding: 8, paddingTop: 6, borderTopWidth: 0.5, borderTopColor: Colors.border, backgroundColor: Colors.white },
   iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   iconBtnText: { fontSize: 20 },
@@ -437,7 +431,6 @@ const s = StyleSheet.create({
   sendBtnDisabled: { backgroundColor: Colors.border },
   sendBtnText: { fontSize: 14, fontWeight: '600', color: Colors.white },
 
-  // Sticker
   stickerPanel: { flexDirection: 'row', flexWrap: 'wrap', padding: 8, backgroundColor: Colors.bg, borderTopWidth: 0.5, borderTopColor: Colors.border },
   stickerItem: { width: '25%', alignItems: 'center', paddingVertical: 10 },
   stickerItemEmoji: { fontSize: 28 },
@@ -446,14 +439,12 @@ const s = StyleSheet.create({
   stickerEmoji: { fontSize: 48 },
   stickerLabel: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
 
-  // Voice
   voiceBubble: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 10, paddingHorizontal: 14, gap: 8, minWidth: 160 },
   voiceIcon: { fontSize: 18 },
   voiceWave: { flexDirection: 'row', alignItems: 'center', gap: 2, flex: 1 },
   voiceBar: { width: 3, borderRadius: 2 },
   voiceDuration: { fontSize: 12, color: Colors.textSecondary },
 
-  // Recording
   recordingBar: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#FCEBEB', borderTopWidth: 0.5, borderTopColor: '#F09595' },
   recordingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#E53935', marginRight: 8 },
   recordingText: { flex: 1, fontSize: 14, fontWeight: '500', color: '#E53935' },

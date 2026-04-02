@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -18,23 +19,21 @@ function todayStr() {
 
 export default function ChildPromise() {
   const { user, familyId } = useAuth();
+  const { t } = useTranslation();
   const [promises, setPromises] = useState([]);
   const [checkedMap, setCheckedMap] = useState({});
   const [weeklyData, setWeeklyData] = useState(null);
 
-  // 약속 목록 구독
   useEffect(() => {
     if (!familyId) return;
     return subscribePromises(familyId, setPromises);
   }, [familyId]);
 
-  // 오늘 체크 현황 구독
   useEffect(() => {
     if (!familyId || !user) return;
     return subscribeTodayChecks(familyId, user.uid, setCheckedMap);
   }, [familyId, user]);
 
-  // 주간 체크 현황 구독
   useEffect(() => {
     if (!familyId || !user) return;
     return subscribeWeeklyChecks(familyId, user.uid, setWeeklyData);
@@ -51,13 +50,13 @@ export default function ChildPromise() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <Text style={s.title}>Family promise</Text>
-      <Text style={s.subtitle}>우리가 함께 만든 약속</Text>
+      <Text style={s.title}>{t('child.promise.title')}</Text>
+      <Text style={s.subtitle}>{t('child.promise.subtitle')}</Text>
 
       {totalPromises === 0 ? (
         <View style={s.emptyCard}>
-          <Text style={s.emptyText}>아직 약속이 없어요</Text>
-          <Text style={s.emptyHint}>부모님이 약속을 추가하면 여기에 표시됩니다</Text>
+          <Text style={s.emptyText}>{t('child.promise.empty')}</Text>
+          <Text style={s.emptyHint}>{t('child.promise.emptyHint')}</Text>
         </View>
       ) : (
         <>
@@ -71,17 +70,16 @@ export default function ChildPromise() {
                 <View style={s.promiseInfo}>
                   <Text style={[s.promiseText, done && s.promiseTextDone]}>{p.text}</Text>
                   <Text style={s.promiseSub}>
-                    {done ? '오늘 완료!' : '탭해서 완료'}
+                    {done ? t('child.promise.todayDone') : t('child.promise.tapDone')}
                   </Text>
                 </View>
               </TouchableOpacity>
             );
           })}
 
-          {/* 주간 현황 */}
           {weeklyData && (
             <View style={s.weekCard}>
-              <Text style={s.weekTitle}>This week</Text>
+              <Text style={s.weekTitle}>{t('child.promise.thisWeek')}</Text>
               <View style={s.weekRow}>
                 {weeklyData.dates.map((date, i) => {
                   const checkedCount = weeklyData.byDate[date]?.size || 0;
@@ -125,8 +123,8 @@ export default function ChildPromise() {
       <View style={s.locCard}>
         <View style={s.locDot} />
         <View style={s.locInfo}>
-          <Text style={s.locTitle}>Location sharing ON</Text>
-          <Text style={s.locDesc}>Parents can see your location</Text>
+          <Text style={s.locTitle}>{t('child.promise.locationOn')}</Text>
+          <Text style={s.locDesc}>{t('child.promise.locationDesc')}</Text>
         </View>
       </View>
     </ScrollView>

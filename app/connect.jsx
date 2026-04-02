@@ -2,6 +2,7 @@ import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { doc, setDoc, updateDoc, arrayUnion, collection, query, where, getDocs } from "firebase/firestore";
+import { useTranslation } from 'react-i18next';
 import { db } from "../constants/firebase";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -9,13 +10,13 @@ function generateCode() { return Math.random().toString(36).substring(2,8).toUpp
 
 export default function FamilyConnect() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { user, role, setFamilyId } = useAuth();
   const [code, setCode] = useState("");
   const [generatedCode, setGeneratedCode] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState(null); // 'create' | 'join' (부모용)
+  const [mode, setMode] = useState(null);
 
-  // 부모: 새 가족 생성
   async function handleGenerate() {
     setLoading(true);
     try {
@@ -30,46 +31,44 @@ export default function FamilyConnect() {
       await updateDoc(doc(db, "users", user.uid), { familyId });
       setGeneratedCode(inviteCode);
       setFamilyId(familyId);
-    } catch (e) { Alert.alert("오류", "코드 생성에 실패했습니다"); }
+    } catch (e) { Alert.alert(t('common.error'), t('connect.codeFailed')); }
     setLoading(false);
   }
 
-  // 부모: 기존 가족에 합류
   async function handleParentJoin() {
-    if (!code || code.length < 6) { Alert.alert("오류", "6자리 코드를 입력하세요"); return; }
+    if (!code || code.length < 6) { Alert.alert(t('common.error'), t('connect.codeRequired')); return; }
     setLoading(true);
     try {
       const q = query(collection(db, "families"), where("inviteCode", "==", code.toUpperCase()));
       const snap = await getDocs(q);
-      if (snap.empty) { Alert.alert("오류", "유효하지 않은 코드입니다"); setLoading(false); return; }
+      if (snap.empty) { Alert.alert(t('common.error'), t('connect.invalidCode')); setLoading(false); return; }
       const fDoc = snap.docs[0];
       const familyId = fDoc.id;
       await updateDoc(doc(db, "families", familyId), { parentIds: arrayUnion(user.uid) });
       await updateDoc(doc(db, "users", user.uid), { familyId });
       setFamilyId(familyId);
-      Alert.alert("연결 완료!", "가족에 부모로 합류했습니다.");
+      Alert.alert(t('connect.connectSuccess'), t('connect.parentJoined'));
       router.replace("/parent");
-    } catch (e) { Alert.alert("오류", "연결에 실패했습니다"); }
+    } catch (e) { Alert.alert(t('common.error'), t('connect.connectFailed')); }
     setLoading(false);
   }
 
-  // 자녀: 가족에 합류
   async function handleChildJoin() {
-    if (!code || code.length < 6) { Alert.alert("오류", "6자리 코드를 입력하세요"); return; }
+    if (!code || code.length < 6) { Alert.alert(t('common.error'), t('connect.codeRequired')); return; }
     setLoading(true);
     try {
       const q = query(collection(db, "families"), where("inviteCode", "==", code.toUpperCase()));
       const snap = await getDocs(q);
-      if (snap.empty) { Alert.alert("오류", "유효하지 않은 코드입니다"); setLoading(false); return; }
+      if (snap.empty) { Alert.alert(t('common.error'), t('connect.invalidCode')); setLoading(false); return; }
       const fDoc = snap.docs[0];
       const fData = fDoc.data();
       const familyId = fDoc.id;
       await updateDoc(doc(db, "families", familyId), { children: [...(fData.children||[]), user.uid] });
       await updateDoc(doc(db, "users", user.uid), { familyId });
       setFamilyId(familyId);
-      Alert.alert("연결 완료!", "가족이 성공적으로 연결되었습니다.");
+      Alert.alert(t('connect.connectSuccess'), t('connect.familyConnected'));
       router.replace("/child");
-    } catch (e) { Alert.alert("오류", "연결에 실패했습니다"); }
+    } catch (e) { Alert.alert(t('common.error'), t('connect.connectFailed')); }
     setLoading(false);
   }
 
@@ -79,62 +78,62 @@ export default function FamilyConnect() {
         <View style={[s.logoCircle, role==="child" && {backgroundColor:"#FAECE7"}]}>
           <Text style={[s.logoText, role==="child" && {color:"#993C1D"}]}>{role==="parent"?"P":"C"}</Text>
         </View>
-        <Text style={s.title}>가족 연결</Text>
+        <Text style={s.title}>{t('connect.title')}</Text>
       </View>
       {role === "parent" ? (
         <View>
           {!mode ? (
             <>
-              <Text style={s.desc}>새 가족을 만들거나, 기존 가족에 합류하세요.</Text>
+              <Text style={s.desc}>{t('connect.parentDesc')}</Text>
               <TouchableOpacity style={s.mainBtn} onPress={() => setMode('create')}>
-                <Text style={s.mainBtnText}>새 가족 만들기</Text>
+                <Text style={s.mainBtnText}>{t('connect.createFamily')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[s.mainBtn,{backgroundColor:"#4A90D9",marginTop:12}]} onPress={() => setMode('join')}>
-                <Text style={s.mainBtnText}>초대 코드로 합류</Text>
+                <Text style={s.mainBtnText}>{t('connect.joinByCode')}</Text>
               </TouchableOpacity>
             </>
           ) : mode === 'create' ? (
             <>
-              <Text style={s.desc}>코드를 생성하여 자녀나 다른 부모에게 공유하세요.</Text>
+              <Text style={s.desc}>{t('connect.shareCodeDesc')}</Text>
               {generatedCode ? (
                 <View style={s.codeBox}>
-                  <Text style={s.codeLabel}>초대 코드</Text>
+                  <Text style={s.codeLabel}>{t('connect.inviteCode')}</Text>
                   <Text style={s.codeText}>{generatedCode}</Text>
-                  <Text style={s.codeHint}>이 코드를 자녀나 다른 부모에게 알려주세요</Text>
+                  <Text style={s.codeHint}>{t('connect.codeHint')}</Text>
                   <TouchableOpacity style={s.mainBtn} onPress={() => router.replace("/parent")}>
-                    <Text style={s.mainBtnText}>홈으로 이동</Text>
+                    <Text style={s.mainBtnText}>{t('connect.goHome')}</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <>
                   <TouchableOpacity style={s.mainBtn} onPress={handleGenerate} disabled={loading}>
-                    {loading ? <ActivityIndicator color="#fff"/> : <Text style={s.mainBtnText}>코드 생성</Text>}
+                    {loading ? <ActivityIndicator color="#fff"/> : <Text style={s.mainBtnText}>{t('connect.generateCode')}</Text>}
                   </TouchableOpacity>
                   <TouchableOpacity style={s.backBtn} onPress={() => setMode(null)}>
-                    <Text style={s.backBtnText}>뒤로</Text>
+                    <Text style={s.backBtnText}>{t('common.back')}</Text>
                   </TouchableOpacity>
                 </>
               )}
             </>
           ) : (
             <>
-              <Text style={s.desc}>다른 부모님에게 받은 코드를 입력하세요.</Text>
-              <TextInput style={s.codeInput} placeholder="ABC123" value={code} onChangeText={t=>setCode(t.toUpperCase())} maxLength={6} autoCapitalize="characters" placeholderTextColor="#9B9B9B"/>
+              <Text style={s.desc}>{t('connect.parentJoinDesc')}</Text>
+              <TextInput style={s.codeInput} placeholder="ABC123" value={code} onChangeText={t2=>setCode(t2.toUpperCase())} maxLength={6} autoCapitalize="characters" placeholderTextColor="#9B9B9B"/>
               <TouchableOpacity style={[s.mainBtn,{backgroundColor:"#4A90D9"}]} onPress={handleParentJoin} disabled={loading}>
-                {loading ? <ActivityIndicator color="#fff"/> : <Text style={s.mainBtnText}>합류하기</Text>}
+                {loading ? <ActivityIndicator color="#fff"/> : <Text style={s.mainBtnText}>{t('connect.join')}</Text>}
               </TouchableOpacity>
               <TouchableOpacity style={s.backBtn} onPress={() => setMode(null)}>
-                <Text style={s.backBtnText}>뒤로</Text>
+                <Text style={s.backBtnText}>{t('common.back')}</Text>
               </TouchableOpacity>
             </>
           )}
         </View>
       ) : (
         <View>
-          <Text style={s.desc}>부모님에게 받은 코드를 입력하세요.</Text>
-          <TextInput style={s.codeInput} placeholder="ABC123" value={code} onChangeText={t=>setCode(t.toUpperCase())} maxLength={6} autoCapitalize="characters" placeholderTextColor="#9B9B9B"/>
+          <Text style={s.desc}>{t('connect.childDesc')}</Text>
+          <TextInput style={s.codeInput} placeholder="ABC123" value={code} onChangeText={t2=>setCode(t2.toUpperCase())} maxLength={6} autoCapitalize="characters" placeholderTextColor="#9B9B9B"/>
           <TouchableOpacity style={[s.mainBtn,{backgroundColor:"#993C1D"}]} onPress={handleChildJoin} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff"/> : <Text style={s.mainBtnText}>연결하기</Text>}
+            {loading ? <ActivityIndicator color="#fff"/> : <Text style={s.mainBtnText}>{t('connect.childConnect')}</Text>}
           </TouchableOpacity>
         </View>
       )}

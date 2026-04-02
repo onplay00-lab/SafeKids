@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTranslation } from 'react-i18next';
 import { auth, db } from "../constants/firebase";
 import { Colors } from "../constants/Colors";
 
@@ -16,6 +17,7 @@ const STORAGE_KEYS = {
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
@@ -42,7 +44,6 @@ export default function LoginScreen() {
         }
 
         if (savedAutoLogin === "true" && savedEmail && savedPassword) {
-          // 현재 이미 로그인 상태면(signOut 직후 잔류) 자동 로그인 스킵
           if (auth.currentUser) {
             setInitializing(false);
             return;
@@ -51,7 +52,6 @@ export default function LoginScreen() {
           setSaveEmail(true);
           setEmail(savedEmail);
           setPassword(savedPassword);
-          // 자동 로그인 실행
           await doLogin(savedEmail, savedPassword);
         }
       } catch (e) {
@@ -79,7 +79,6 @@ export default function LoginScreen() {
     }
   }
 
-  // 체크박스 토글
   async function toggleSaveEmail() {
     const next = !saveEmail;
     setSaveEmail(next);
@@ -102,7 +101,7 @@ export default function LoginScreen() {
   }
 
   async function handleAuth() {
-    if (!email || !password) { Alert.alert("Error", "이메일과 비밀번호를 입력하세요"); return; }
+    if (!email || !password) { Alert.alert("Error", t('auth.emailPasswordRequired')); return; }
     setLoading(true);
     try {
       await AsyncStorage.removeItem("logged_out");
@@ -114,7 +113,6 @@ export default function LoginScreen() {
         cred = await signInWithEmailAndPassword(auth, email, password);
       }
 
-      // 로그인 정보 저장
       if (saveEmail) {
         await AsyncStorage.setItem(STORAGE_KEYS.SAVE_EMAIL, "true");
         await AsyncStorage.setItem(STORAGE_KEYS.SAVED_EMAIL, email);
@@ -132,13 +130,13 @@ export default function LoginScreen() {
         else { router.replace(r === "parent" ? "/parent" : "/child"); }
       }
     } catch (error) {
-      let msg = "오류가 발생했습니다";
-      if (error.code === "auth/email-already-in-use") msg = "이미 등록된 이메일입니다";
-      if (error.code === "auth/invalid-email") msg = "유효하지 않은 이메일입니다";
-      if (error.code === "auth/wrong-password" || error.code === "auth/invalid-credential") msg = "비밀번호가 틀렸습니다";
-      if (error.code === "auth/user-not-found") msg = "등록되지 않은 계정입니다";
-      if (error.code === "auth/weak-password") msg = "비밀번호는 6자 이상이어야 합니다";
-      Alert.alert("오류", msg);
+      let msg = t('auth.errorGeneral');
+      if (error.code === "auth/email-already-in-use") msg = t('auth.errorEmailInUse');
+      if (error.code === "auth/invalid-email") msg = t('auth.errorInvalidEmail');
+      if (error.code === "auth/wrong-password" || error.code === "auth/invalid-credential") msg = t('auth.errorWrongPassword');
+      if (error.code === "auth/user-not-found") msg = t('auth.errorUserNotFound');
+      if (error.code === "auth/weak-password") msg = t('auth.errorWeakPassword');
+      Alert.alert(t('common.error'), msg);
     }
     setLoading(false);
   }
@@ -147,7 +145,7 @@ export default function LoginScreen() {
     return (
       <View style={[s.container, { alignItems: "center" }]}>
         <ActivityIndicator size="large" color="#185FA5" />
-        <Text style={{ marginTop: 12, color: "#6B6B6B" }}>로그인 중...</Text>
+        <Text style={{ marginTop: 12, color: "#6B6B6B" }}>{t('auth.loginLoading')}</Text>
       </View>
     );
   }
@@ -158,9 +156,9 @@ export default function LoginScreen() {
         <View style={s.logoCircle}><Text style={s.logoText}>SK</Text></View>
         <Text style={s.appName}>SafeKids</Text>
       </View>
-      <Text style={s.heading}>{isSignUp ? "회원가입" : "로그인"}</Text>
-      <TextInput style={s.input} placeholder="이메일" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#9B9B9B" />
-      <TextInput style={s.input} placeholder="비밀번호" value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor="#9B9B9B" />
+      <Text style={s.heading}>{isSignUp ? t('auth.signup') : t('auth.login')}</Text>
+      <TextInput style={s.input} placeholder={t('auth.email')} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#9B9B9B" />
+      <TextInput style={s.input} placeholder={t('auth.password')} value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor="#9B9B9B" />
 
       {!isSignUp && (
         <View style={s.checkArea}>
@@ -168,35 +166,35 @@ export default function LoginScreen() {
             <View style={[s.checkbox, saveEmail && s.checkboxOn]}>
               {saveEmail && <Text style={s.checkmark}>✓</Text>}
             </View>
-            <Text style={s.checkLabel}>아이디 저장</Text>
+            <Text style={s.checkLabel}>{t('auth.saveId')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={s.checkRow} onPress={toggleAutoLogin}>
             <View style={[s.checkbox, autoLogin && s.checkboxOn]}>
               {autoLogin && <Text style={s.checkmark}>✓</Text>}
             </View>
-            <Text style={s.checkLabel}>자동 로그인</Text>
+            <Text style={s.checkLabel}>{t('auth.autoLogin')}</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {isSignUp && (
         <View style={s.roleArea}>
-          <Text style={s.roleLabel}>역할 선택:</Text>
+          <Text style={s.roleLabel}>{t('auth.roleSelect')}</Text>
           <View style={s.roleBtns}>
             <TouchableOpacity style={[s.roleBtn, selectedRole==="parent" && s.roleBtnActive]} onPress={() => setSelectedRole("parent")}>
-              <Text style={[s.roleBtnText, selectedRole==="parent" && {color:"#185FA5",fontWeight:"500"}]}>부모</Text>
+              <Text style={[s.roleBtnText, selectedRole==="parent" && {color:"#185FA5",fontWeight:"500"}]}>{t('auth.parent')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[s.roleBtn, selectedRole==="child" && s.roleBtnActiveChild]} onPress={() => setSelectedRole("child")}>
-              <Text style={[s.roleBtnText, selectedRole==="child" && {color:"#993C1D",fontWeight:"500"}]}>자녀</Text>
+              <Text style={[s.roleBtnText, selectedRole==="child" && {color:"#993C1D",fontWeight:"500"}]}>{t('auth.child')}</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
       <TouchableOpacity style={s.mainBtn} onPress={handleAuth} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.mainBtnText}>{isSignUp ? "회원가입" : "로그인"}</Text>}
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.mainBtnText}>{isSignUp ? t('auth.signup') : t('auth.login')}</Text>}
       </TouchableOpacity>
       <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} style={s.switchBtn}>
-        <Text style={s.switchText}>{isSignUp ? "이미 계정이 있으신가요? 로그인" : "계정이 없으신가요? 회원가입"}</Text>
+        <Text style={s.switchText}>{isSignUp ? t('auth.switchToLogin') : t('auth.switchToSignup')}</Text>
       </TouchableOpacity>
     </View>
   );

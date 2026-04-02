@@ -11,6 +11,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   subscribeGeofences, addGeofence, toggleGeofence, deleteGeofence, updateGeofenceNotify,
 } from '../../src/services/geofenceService';
+import { useTranslation } from 'react-i18next';
 
 // 역지오코딩: 좌표 → 주소
 async function reverseGeocode(lat, lng) {
@@ -27,6 +28,7 @@ async function reverseGeocode(lat, lng) {
 }
 
 export default function ParentLocation() {
+  const { t } = useTranslation();
   const { familyId } = useAuth();
   const [childLocations, setChildLocations] = useState([]);
   const [childProfiles, setChildProfiles] = useState([]);
@@ -136,7 +138,7 @@ export default function ParentLocation() {
 
   function getChildName(uid) {
     const p = childProfiles.find((c) => c.uid === uid);
-    return p ? p.name : '자녀';
+    return p ? p.name : t('common.child');
   }
 
   function openMap(lat, lng) {
@@ -145,7 +147,7 @@ export default function ParentLocation() {
 
   function useChildLocation() {
     if (!selectedLoc?.latitude) {
-      Alert.alert('알림', '자녀 위치 데이터가 없습니다.');
+      Alert.alert(t('common.error'), t('parent.location.noChildLocation'));
       return;
     }
     setFormLat(String(selectedLoc.latitude?.toFixed(6) || ''));
@@ -153,12 +155,12 @@ export default function ParentLocation() {
   }
 
   async function handleAddGeofence() {
-    if (!formName.trim()) return Alert.alert('오류', '장소 이름을 입력해주세요.');
+    if (!formName.trim()) return Alert.alert(t('common.error'), t('parent.location.placeNameRequired'));
     const lat = parseFloat(formLat);
     const lng = parseFloat(formLng);
-    if (isNaN(lat) || isNaN(lng)) return Alert.alert('오류', '올바른 위도/경도를 입력해주세요.');
+    if (isNaN(lat) || isNaN(lng)) return Alert.alert(t('common.error'), t('parent.location.invalidLatLng'));
     const radius = parseInt(formRadius, 10);
-    if (isNaN(radius) || radius < 50) return Alert.alert('오류', '반경은 50m 이상이어야 합니다.');
+    if (isNaN(radius) || radius < 50) return Alert.alert(t('common.error'), t('parent.location.radiusMin'));
 
     setSaving(true);
     try {
@@ -166,7 +168,7 @@ export default function ParentLocation() {
       setShowForm(false);
       setFormName(''); setFormRadius('200'); setFormLat(''); setFormLng('');
     } catch (e) {
-      Alert.alert('오류', '장소 추가에 실패했습니다.');
+      Alert.alert(t('common.error'), t('parent.location.addFailed'));
     }
     setSaving(false);
   }
@@ -175,21 +177,21 @@ export default function ParentLocation() {
     try {
       await toggleGeofence(familyId, geo.id, !geo.enabled);
     } catch (e) {
-      Alert.alert('오류', '변경에 실패했습니다.');
+      Alert.alert(t('common.error'), t('parent.location.changeFailed'));
     }
   }
 
   function handleDelete(geo) {
-    Alert.alert(`"${geo.name}" 삭제`, '이 장소를 삭제하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
-      { text: '삭제', style: 'destructive', onPress: () => deleteGeofence(familyId, geo.id) },
+    Alert.alert(t('parent.location.deleteTitle', { name: geo.name }), t('parent.location.deleteMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: () => deleteGeofence(familyId, geo.id) },
     ]);
   }
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={s.container} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-        <Text style={s.title}>위치</Text>
+        <Text style={s.title}>{t('parent.location.title')}</Text>
 
         {/* 자녀 선택 탭 */}
         {childProfiles.length > 1 && (
@@ -213,7 +215,7 @@ export default function ParentLocation() {
           {loading ? (
             <View style={s.centerBox}>
               <ActivityIndicator size="large" color={Colors.primary} />
-              <Text style={s.loadingText}>위치 불러오는 중...</Text>
+              <Text style={s.loadingText}>{t('parent.location.loading')}</Text>
             </View>
           ) : selectedLoc?.latitude && Platform.OS === 'web' ? (
             <View style={s.centerBox}>
@@ -230,7 +232,7 @@ export default function ParentLocation() {
                 style={s.mapBtn}
                 onPress={() => openMap(selectedLoc.latitude, selectedLoc.longitude)}
               >
-                <Text style={s.mapBtnText}>Google Maps에서 열기</Text>
+                <Text style={s.mapBtnText}>{t('parent.location.openGoogleMaps')}</Text>
               </TouchableOpacity>
             </View>
           ) : selectedLoc?.latitude ? (
@@ -301,15 +303,15 @@ export default function ParentLocation() {
                 onPress={() => setShowHistory(!showHistory)}
               >
                 <Text style={[s.historyBtnText, showHistory && { color: '#fff' }]}>
-                  📍 이동 경로
+                  {t('parent.location.movementPath')}
                 </Text>
               </TouchableOpacity>
             </>
           ) : (
             <View style={s.centerBox}>
               <Text style={{ fontSize: 40, marginBottom: 8 }}>🔍</Text>
-              <Text style={s.noDataText}>자녀 위치 데이터 없음</Text>
-              <Text style={s.noDataSub}>자녀 앱이 실행 중이어야 합니다</Text>
+              <Text style={s.noDataText}>{t('parent.location.noData')}</Text>
+              <Text style={s.noDataSub}>{t('parent.location.noDataSub')}</Text>
             </View>
           )}
         </View>
@@ -338,7 +340,7 @@ export default function ParentLocation() {
             <Text style={s.childTime}>
               {selectedLoc.updatedAt ? new Date(selectedLoc.updatedAt.toDate()).toLocaleString('ko-KR') : ''}
             </Text>
-            <Text style={s.tapHint}>탭하여 Google Maps에서 열기</Text>
+            <Text style={s.tapHint}>{t('parent.location.tapToOpen')}</Text>
           </TouchableOpacity>
         )}
 
@@ -368,9 +370,9 @@ export default function ParentLocation() {
         ))}
 
         {/* 지오펜스 목록 */}
-        <Text style={s.section}>안전 구역</Text>
+        <Text style={s.section}>{t('parent.location.safeZone')}</Text>
         {geofences.length === 0 && (
-          <Text style={s.emptyText}>등록된 안전 구역이 없습니다</Text>
+          <Text style={s.emptyText}>{t('parent.location.noSafeZone')}</Text>
         )}
         {geofences.map((g) => (
           <View key={g.id} style={s.geoCard}>
@@ -382,7 +384,7 @@ export default function ParentLocation() {
               <View style={[s.geoDot, { backgroundColor: g.color || Colors.primary }]} />
               <View style={s.geoInfo}>
                 <Text style={s.geoName}>{g.name}</Text>
-                <Text style={s.geoRadius}>반경 {g.radius}m</Text>
+                <Text style={s.geoRadius}>{t('parent.location.radius', { n: g.radius })}</Text>
               </View>
               <TouchableOpacity onPress={() => handleToggle(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <View style={[s.toggle, g.enabled && s.toggleOn]}>
@@ -396,32 +398,34 @@ export default function ParentLocation() {
                   style={[s.geoNotifyBtn, g.notifyOnEnter !== false && s.geoNotifyBtnActive]}
                   onPress={() => updateGeofenceNotify(familyId, g.id, { notifyOnEnter: g.notifyOnEnter === false, notifyOnExit: g.notifyOnExit !== false })}
                 >
-                  <Text style={[s.geoNotifyText, g.notifyOnEnter !== false && s.geoNotifyTextActive]}>도착 알림</Text>
+                  <Text style={[s.geoNotifyText, g.notifyOnEnter !== false && s.geoNotifyTextActive]}>{t('parent.location.arrivalNotif')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[s.geoNotifyBtn, g.notifyOnExit !== false && s.geoNotifyBtnActive]}
                   onPress={() => updateGeofenceNotify(familyId, g.id, { notifyOnEnter: g.notifyOnEnter !== false, notifyOnExit: g.notifyOnExit === false })}
                 >
-                  <Text style={[s.geoNotifyText, g.notifyOnExit !== false && s.geoNotifyTextActive]}>이탈 알림</Text>
+                  <Text style={[s.geoNotifyText, g.notifyOnExit !== false && s.geoNotifyTextActive]}>{t('parent.location.departureNotif')}</Text>
                 </TouchableOpacity>
               </View>
             )}
           </View>
         ))}
         {geofences.length > 0 && (
-          <Text style={s.deleteTip}>길게 눌러서 삭제</Text>
+          <Text style={s.deleteTip}>{t('parent.location.longPressDelete')}</Text>
         )}
 
         {/* 안심존 알림 기록 */}
         {geoAlerts.length > 0 && (
           <>
-            <Text style={s.section}>안심존 알림 기록</Text>
+            <Text style={s.section}>{t('parent.location.alertHistory')}</Text>
             {geoAlerts.map((a) => (
               <View key={a.id} style={s.alertRow}>
                 <Text style={s.alertIcon}>{a.type === 'entered' ? '🟢' : '🔴'}</Text>
                 <View style={s.alertInfo}>
                   <Text style={s.alertText}>
-                    {a.childName || '자녀'}이(가) {a.geofenceName} {a.type === 'entered' ? '진입' : '이탈'}
+                    {a.type === 'entered'
+                      ? t('parent.location.entered', { name: a.childName || t('common.child'), place: a.geofenceName })
+                      : t('parent.location.exited', { name: a.childName || t('common.child'), place: a.geofenceName })}
                   </Text>
                   <Text style={s.alertTime}>
                     {a.createdAt?.toDate ? new Date(a.createdAt.toDate()).toLocaleString('ko-KR') : ''}
@@ -435,18 +439,18 @@ export default function ParentLocation() {
         {/* 장소 추가 폼 */}
         {showForm ? (
           <View style={s.form}>
-            <Text style={s.formTitle}>새 안전 구역 추가</Text>
+            <Text style={s.formTitle}>{t('parent.location.newSafeZone')}</Text>
 
-            <Text style={s.label}>장소 이름</Text>
+            <Text style={s.label}>{t('parent.location.placeName')}</Text>
             <TextInput
               style={s.input}
               value={formName}
               onChangeText={setFormName}
-              placeholder="예: 집, 학교"
+              placeholder={t('parent.location.placeNamePlaceholder')}
               placeholderTextColor={Colors.textHint}
             />
 
-            <Text style={s.label}>반경 (미터)</Text>
+            <Text style={s.label}>{t('parent.location.radiusLabel')}</Text>
             <TextInput
               style={s.input}
               value={formRadius}
@@ -456,14 +460,14 @@ export default function ParentLocation() {
               placeholderTextColor={Colors.textHint}
             />
 
-            <Text style={s.label}>위도 / 경도</Text>
+            <Text style={s.label}>{t('parent.location.latLng')}</Text>
             <View style={s.coordRow}>
               <TextInput
                 style={[s.input, s.coordInput]}
                 value={formLat}
                 onChangeText={setFormLat}
                 keyboardType="numeric"
-                placeholder="위도"
+                placeholder={t('parent.location.latitude')}
                 placeholderTextColor={Colors.textHint}
               />
               <TextInput
@@ -471,14 +475,14 @@ export default function ParentLocation() {
                 value={formLng}
                 onChangeText={setFormLng}
                 keyboardType="numeric"
-                placeholder="경도"
+                placeholder={t('parent.location.longitude')}
                 placeholderTextColor={Colors.textHint}
               />
             </View>
 
             {selectedLoc?.latitude && (
               <TouchableOpacity style={s.useLocBtn} onPress={useChildLocation}>
-                <Text style={s.useLocText}>📍 자녀 현재 위치 사용</Text>
+                <Text style={s.useLocText}>{t('parent.location.useChildLocation')}</Text>
               </TouchableOpacity>
             )}
 
@@ -487,16 +491,16 @@ export default function ParentLocation() {
                 style={s.cancelBtn}
                 onPress={() => { setShowForm(false); setFormName(''); setFormRadius('200'); setFormLat(''); setFormLng(''); }}
               >
-                <Text style={s.cancelBtnText}>취소</Text>
+                <Text style={s.cancelBtnText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.saveBtn} onPress={handleAddGeofence} disabled={saving}>
-                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>추가</Text>}
+                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.saveBtnText}>{t('common.add')}</Text>}
               </TouchableOpacity>
             </View>
           </View>
         ) : (
           <TouchableOpacity style={s.addBtn} onPress={() => setShowForm(true)}>
-            <Text style={s.addBtnText}>+ 안전 구역 추가</Text>
+            <Text style={s.addBtnText}>{t('parent.location.addSafeZone')}</Text>
           </TouchableOpacity>
         )}
       </ScrollView>

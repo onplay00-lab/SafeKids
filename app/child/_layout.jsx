@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Tabs } from 'expo-router';
 import { View, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { registerPushToken } from '../../src/services/notificationService';
@@ -18,6 +19,7 @@ export default function ChildLayout() {
   const insets = useSafeAreaInsets();
   const bottomPadding = Math.max(insets.bottom, 24);
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   // 로그인 시 푸시 토큰 등록 (SOS 수신용은 부모지만, 아이도 향후 알림 수신 위해 등록)
   useEffect(() => {
@@ -34,10 +36,10 @@ export default function ChildLayout() {
       tabBarInactiveTintColor:Colors.textHint,
       tabBarLabelStyle:{fontSize:11, marginTop:0},
     }}>
-      <Tabs.Screen name="index" options={{title:'홈', tabBarIcon:({focused}) => <TabIcon icon="🏠" focused={focused}/>}} />
-      <Tabs.Screen name="chat" options={{title:'채팅', tabBarIcon:({focused}) => <TabIcon icon="💬" focused={focused}/>}} />
-      <Tabs.Screen name="promise" options={{title:'약속', tabBarIcon:({focused}) => <TabIcon icon="✅" focused={focused}/>}} />
-      <Tabs.Screen name="sos" options={{title:'SOS', tabBarIcon:({focused}) => <TabIcon icon="🚨" focused={focused}/>}} />
+      <Tabs.Screen name="index" options={{title:t('tabs.home'), tabBarIcon:({focused}) => <TabIcon icon="🏠" focused={focused}/>}} />
+      <Tabs.Screen name="chat" options={{title:t('tabs.chat'), tabBarIcon:({focused}) => <TabIcon icon="💬" focused={focused}/>}} />
+      <Tabs.Screen name="promise" options={{title:t('tabs.promise'), tabBarIcon:({focused}) => <TabIcon icon="✅" focused={focused}/>}} />
+      <Tabs.Screen name="sos" options={{title:t('tabs.sos'), tabBarIcon:({focused}) => <TabIcon icon="🚨" focused={focused}/>}} />
     </Tabs>
   );
 }

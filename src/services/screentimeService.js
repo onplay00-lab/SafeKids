@@ -343,6 +343,9 @@ export async function requestUsagePermission() {
 export function subscribeScreentime(familyId, childUid, callback) {
   return onSnapshot(getRef(familyId, childUid), (snap) => {
     callback(snap.exists() ? snap.data() : null);
+  }, (err) => {
+    console.error('[스크린타임 구독 오류]', childUid, err);
+    callback(null);
   });
 }
 

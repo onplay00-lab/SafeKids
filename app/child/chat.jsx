@@ -1,13 +1,15 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { Colors } from '../../constants/Colors';
 import FamilyChat from '../../components/FamilyChat';
 
 export default function ChildChat() {
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   return (
     <View style={[s.container, { paddingTop: insets.top + 10 }]}>
-      <Text style={s.title}>가족 채팅</Text>
+      <Text style={s.title}>{t('chat.title')}</Text>
       <FamilyChat />
     </View>
   );

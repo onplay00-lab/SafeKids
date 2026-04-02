@@ -4,6 +4,7 @@ import { signOut } from 'firebase/auth';
 import { useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTranslation } from 'react-i18next';
 import { auth, db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,6 +12,7 @@ import { sendSOS } from '../../src/services/sosService';
 
 export default function ChildSOS() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { familyId } = useAuth();
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -39,12 +41,11 @@ export default function ChildSOS() {
     try {
       await sendSOS(familyId);
       setSent(true);
-      Alert.alert('SOS 전송 완료', '부모님께 알림이 전송되었습니다!');
-      // 30초 후 재전송 가능
+      Alert.alert(t('child.sos.sentTitle'), t('child.sos.sentMessage'));
       setTimeout(() => setSent(false), 30000);
     } catch (e) {
       console.error('SOS failed:', e);
-      Alert.alert('오류', 'SOS 전송에 실패했습니다. 다시 시도해주세요.');
+      Alert.alert(t('common.error'), t('child.sos.failedMessage'));
     } finally {
       setSending(false);
     }
@@ -52,19 +53,19 @@ export default function ChildSOS() {
 
   function confirmSOS() {
     Alert.alert(
-      '🚨 SOS 전송',
-      '부모님께 긴급 알림을 보내시겠습니까?\n현재 위치도 함께 전송됩니다.',
+      t('child.sos.confirmTitle'),
+      t('child.sos.confirmMessage'),
       [
-        { text: '취소', style: 'cancel' },
-        { text: '전송', style: 'destructive', onPress: handleSOS },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('common.send'), style: 'destructive', onPress: handleSOS },
       ]
     );
   }
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <Text style={s.title}>긴급 알림</Text>
-      <Text style={s.subtitle}>3초 길게 눌러서 부모님께 알림 전송</Text>
+      <Text style={s.title}>{t('child.sos.title')}</Text>
+      <Text style={s.subtitle}>{t('child.sos.subtitle')}</Text>
 
       <View style={s.sosArea}>
         <TouchableOpacity
@@ -76,47 +77,41 @@ export default function ChildSOS() {
           {sending ? (
             <ActivityIndicator size="large" color={Colors.danger} />
           ) : sent ? (
-            <Text style={[s.sosText, { color: Colors.safe }]}>전송됨</Text>
+            <Text style={[s.sosText, { color: Colors.safe }]}>{t('child.sos.sent')}</Text>
           ) : (
             <Text style={s.sosText}>SOS</Text>
           )}
         </TouchableOpacity>
         <Text style={s.sosHint}>
-          {sent
-            ? '✓ 부모님께 전송되었습니다\n30초 후 재전송 가능'
-            : '3초 길게 눌러서\n부모님께 알림 전송'}
+          {sent ? t('child.sos.sentHint') : t('child.sos.hint')}
         </Text>
       </View>
 
       <View style={s.infoCard}>
-        <Text style={s.infoTitle}>SOS 전송 시</Text>
-        {[
-          '부모님 폰에 푸시 알림 전송',
-          '현재 위치 정보 전송',
-          '부모 앱에 알림 기록 저장',
-        ].map((t) => (
-          <View key={t} style={s.infoRow}>
+        <Text style={s.infoTitle}>{t('child.sos.infoTitle')}</Text>
+        {[t('child.sos.info1'), t('child.sos.info2'), t('child.sos.info3')].map((txt) => (
+          <View key={txt} style={s.infoRow}>
             <View style={s.infoCheck}><Text style={s.checkMark}>✓</Text></View>
-            <Text style={s.infoText}>{t}</Text>
+            <Text style={s.infoText}>{txt}</Text>
           </View>
         ))}
       </View>
 
-      <Text style={s.emergencyLabel}>긴급 신고</Text>
+      <Text style={s.emergencyLabel}>{t('child.sos.emergency')}</Text>
       <View style={s.callRow}>
         <TouchableOpacity style={s.callBtn} onPress={() => Linking.openURL('tel:112')}>
           <Text style={s.callNum}>112</Text>
-          <Text style={s.callDesc}>경찰</Text>
+          <Text style={s.callDesc}>{t('child.sos.police')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={s.callBtn} onPress={() => Linking.openURL('tel:119')}>
           <Text style={s.callNum}>119</Text>
-          <Text style={s.callDesc}>소방/구급</Text>
+          <Text style={s.callDesc}>{t('child.sos.fireEms')}</Text>
         </TouchableOpacity>
       </View>
 
       {contacts.length > 0 && (
         <>
-          <Text style={[s.emergencyLabel, { marginTop: 20 }]}>가족 연락처</Text>
+          <Text style={[s.emergencyLabel, { marginTop: 20 }]}>{t('child.sos.familyContacts')}</Text>
           <View style={s.contactList}>
             {contacts.map((c) => (
               <TouchableOpacity
@@ -133,7 +128,7 @@ export default function ChildSOS() {
       )}
 
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-        <Text style={s.logoutText}>로그아웃</Text>
+        <Text style={s.logoutText}>{t('child.sos.logout')}</Text>
       </TouchableOpacity>
     </ScrollView>
   );

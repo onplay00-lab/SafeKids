@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { doc, getDoc, onSnapshot, collection, query, orderBy, limit, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useTranslation } from 'react-i18next';
 import { db } from '../../constants/firebase';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
@@ -14,17 +15,8 @@ const CHILD_COLORS = [
   { color: '#EAF3DE', textColor: '#27500A' },
 ];
 
-function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}시간 ${mm}분` : `${mm}분`; }
-
-function timeAgo(date) {
-  const diff = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (diff < 60) return '방금 전';
-  if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
-  return `${Math.floor(diff / 86400)}일 전`;
-}
-
 export default function ParentHome() {
+  const { t } = useTranslation();
   const { familyId } = useAuth();
   const [children, setChildren] = useState([]);
   const [screenMap, setScreenMap] = useState({});
@@ -34,23 +26,61 @@ export default function ParentHome() {
   const [geoAlerts, setGeoAlerts] = useState([]);
   const [timeRequests, setTimeRequests] = useState([]);
   const [emotionMap, setEmotionMap] = useState({});
+  const [childNamesMap, setChildNamesMap] = useState({});
   const [showAllAlerts, setShowAllAlerts] = useState(false);
+
+  function fmt(m) {
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return h > 0 ? t('fmt.hours', { h, m: mm }) : t('fmt.minutes', { m: mm });
+  }
+
+  function timeAgo(date) {
+    const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (diff < 60) return t('fmt.justNow');
+    if (diff < 3600) return t('fmt.minutesAgo', { n: Math.floor(diff / 60) });
+    if (diff < 86400) return t('fmt.hoursAgo', { n: Math.floor(diff / 3600) });
+    return t('fmt.daysAgo', { n: Math.floor(diff / 86400) });
+  }
 
   // 가족 내 아이 목록 로드
   useEffect(() => {
-    if (!familyId) return;
+    if (!familyId) {
+      console.warn('[ParentHome] familyId가 없습니다');
+      return;
+    }
     async function loadChildren() {
-      const famDoc = await getDoc(doc(db, 'families', familyId));
-      if (!famDoc.exists()) return;
-      const childUids = famDoc.data().children || [];
-      const list = await Promise.all(childUids.map(async (uid, i) => {
-        const userDoc = await getDoc(doc(db, 'users', uid));
-        const name = userDoc.exists() ? (userDoc.data().name || userDoc.data().email?.split('@')[0]) : uid;
-        const initials = name.substring(0, 2).toUpperCase();
-        const colors = CHILD_COLORS[i % CHILD_COLORS.length];
-        return { uid, name, initials, ...colors };
-      }));
-      setChildren(list);
+      try {
+        console.log('[ParentHome] 가족 로딩 시작:', familyId);
+        const famDoc = await getDoc(doc(db, 'families', familyId));
+        if (!famDoc.exists()) {
+          console.warn('[ParentHome] 가족 문서가 존재하지 않습니다:', familyId);
+          return;
+        }
+        const famData = famDoc.data();
+        const childUids = famData.children || [];
+        const childNamesMapData = famData.childNames || {};
+        setChildNamesMap(childNamesMapData);
+        console.log('[ParentHome] 자녀 목록:', childUids);
+        if (childUids.length === 0) {
+          console.warn('[ParentHome] 등록된 자녀가 없습니다');
+          return;
+        }
+        const list = await Promise.all(childUids.map(async (uid, i) => {
+          // childNames 맵 우선, 없으면 users 문서에서 가져오기
+          let name = childNamesMapData[uid];
+          if (!name) {
+            const userDoc = await getDoc(doc(db, 'users', uid));
+            name = userDoc.exists() ? (userDoc.data().name || userDoc.data().email?.split('@')[0]) : uid;
+          }
+          const initials = name.substring(0, 2).toUpperCase();
+          const colors = CHILD_COLORS[i % CHILD_COLORS.length];
+          return { uid, name, initials, ...colors };
+        }));
+        setChildren(list);
+      } catch (err) {
+        console.error('[ParentHome] 자녀 로딩 오류:', err);
+      }
     }
     loadChildren();
   }, [familyId]);
@@ -83,7 +113,7 @@ export default function ParentHome() {
         if (snap.exists()) {
           setLocationMap((prev) => ({ ...prev, [c.uid]: snap.data() }));
         }
-      })
+      }, (err) => console.error('[위치 구독 오류]', c.uid, err))
     );
     return () => unsubs.forEach((u) => u());
   }, [familyId, children]);
@@ -96,7 +126,7 @@ export default function ParentHome() {
         if (snap.exists()) {
           setPresenceMap((prev) => ({ ...prev, [c.uid]: snap.data() }));
         }
-      })
+      }, (err) => console.error('[온라인상태 구독 오류]', c.uid, err))
     );
     return () => unsubs.forEach((u) => u());
   }, [familyId, children]);
@@ -125,7 +155,7 @@ export default function ParentHome() {
           createdAt: data.createdAt?.toDate() || new Date(),
         };
       }));
-    });
+    }, (err) => console.error('[지오펜스 구독 오류]', err));
     return unsub;
   }, [familyId]);
 
@@ -138,26 +168,26 @@ export default function ParentHome() {
         id: d.id, type: 'time', ...d.data(),
         createdAt: d.data().createdAt?.toDate() || new Date(),
       })));
-    });
+    }, (err) => console.error('[시간요청 구독 오류]', err));
     return unsub;
   }, [familyId]);
 
   async function handleLoudSignal(child) {
     Alert.alert(
-      '📢 큰소리 신호',
-      `${child.name}에게 큰소리 알림을 보낼까요?\n무음 모드에서도 소리가 울립니다.`,
+      t('parent.home.loudSignalTitle'),
+      t('parent.home.loudSignalMessage', { name: child.name }),
       [
-        { text: '취소', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: '보내기', onPress: async () => {
+          text: t('parent.home.loudSignalSend'), onPress: async () => {
             try {
               await addDoc(collection(db, 'families', familyId, 'loudSignals'), {
                 childUid: child.uid,
                 message: '부모님이 연락을 원해요!',
                 createdAt: serverTimestamp(),
               });
-              Alert.alert('전송 완료', `${child.name}에게 큰소리 신호를 보냈습니다.`);
-            } catch (e) { Alert.alert('오류', '전송에 실패했습니다'); }
+              Alert.alert(t('parent.home.loudSignalSent'), t('parent.home.loudSignalSentDesc', { name: child.name }));
+            } catch (e) { Alert.alert(t('common.error'), t('parent.home.loudSignalFailed')); }
           }
         },
       ]
@@ -166,16 +196,39 @@ export default function ParentHome() {
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <Text style={s.title}>SafeKids</Text>
+      <Text style={s.title}>{t('parent.home.title')}</Text>
+
+      {/* 디버그: familyId 및 자녀 로딩 상태 */}
+      {__DEV__ && (
+        <View style={{ backgroundColor: '#FFF3E0', padding: 10, borderRadius: 8, marginBottom: 10 }}>
+          <Text style={{ fontSize: 11, color: '#E65100' }}>
+            familyId: {familyId || 'null'} | children: {children.length}
+          </Text>
+        </View>
+      )}
+
+      {!familyId && (
+        <View style={{ backgroundColor: '#FFF5F5', padding: 16, borderRadius: 12, marginBottom: 12 }}>
+          <Text style={{ fontSize: 14, color: '#C62828', fontWeight: '600' }}>{t('parent.home.familyNeeded')}</Text>
+          <Text style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{t('parent.home.familyNeededDesc')}</Text>
+        </View>
+      )}
+
+      {familyId && children.length === 0 && (
+        <View style={{ backgroundColor: '#F5F5F5', padding: 16, borderRadius: 12, marginBottom: 12 }}>
+          <Text style={{ fontSize: 14, color: '#333', fontWeight: '600' }}>{t('parent.home.noChildren')}</Text>
+          <Text style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{t('parent.home.noChildrenDesc')}</Text>
+        </View>
+      )}
 
       {/* SOS 배너: 최근 미해결 SOS가 있으면 표시 */}
       {sosAlerts.filter(a => !a.resolved).slice(0, 1).map(a => (
         <View key={a.id} style={s.sosBanner}>
           <View style={{ flex: 1 }}>
-            <Text style={s.sosBannerText}>🚨 {a.childName} SOS 알림 · {timeAgo(a.createdAt)}</Text>
+            <Text style={s.sosBannerText}>{t('parent.home.sosAlert', { name: (a.childUid && childNamesMap[a.childUid]) || a.childName, time: timeAgo(a.createdAt) })}</Text>
           </View>
           <TouchableOpacity style={s.sosBannerBtn} onPress={() => resolveSOS(familyId, a.id)}>
-            <Text style={s.sosBannerBtnText}>확인 완료</Text>
+            <Text style={s.sosBannerBtnText}>{t('parent.home.resolved')}</Text>
           </TouchableOpacity>
         </View>
       ))}
@@ -201,18 +254,18 @@ export default function ParentHome() {
               <View style={s.childNameRow}>
                 <Text style={s.childName}>{c.name}</Text>
                 <Text style={[s.onlineText, { color: isOnline ? Colors.safe : Colors.textHint }]}>
-                  {isOnline ? '온라인' : lastSeen ? timeAgo(lastSeen) : '오프라인'}
+                  {isOnline ? t('common.online') : lastSeen ? timeAgo(lastSeen) : t('common.offline')}
                 </Text>
               </View>
               <View style={s.childSubRow}>
-                <Text style={s.childLoc}>{sd ? `사용 ${fmt(sd.dailyUsage || 0)}` : '데이터 없음'}</Text>
+                <Text style={s.childLoc}>{sd ? t('parent.home.usage', { time: fmt(sd.dailyUsage || 0) }) : t('common.noData')}</Text>
                 {battery >= 0 && (
                   <Text style={[s.batteryText, lowBattery && s.batteryLow]}>
                     {charging ? '⚡' : '🔋'}{battery}%
                   </Text>
                 )}
                 {emotion && emotion.date === new Date().toISOString().split('T')[0] && (
-                  <Text style={s.emotionBadge}>{emotion.emoji} {emotion.label}</Text>
+                  <Text style={s.emotionBadge}>{emotion.emoji} {t(`emotions.${emotion.emotionId}`)}</Text>
                 )}
               </View>
             </View>
@@ -222,7 +275,7 @@ export default function ParentHome() {
               </TouchableOpacity>
               <View style={[s.badge, { backgroundColor: hasSOS ? Colors.dangerBg : lowBattery ? '#FFF3E0' : Colors.safeBg }]}>
                 <Text style={[s.badgeText, { color: hasSOS ? Colors.danger : lowBattery ? '#E65100' : Colors.safe }]}>
-                  {hasSOS ? 'SOS!' : lowBattery ? '저전력' : '안전'}
+                  {hasSOS ? 'SOS!' : lowBattery ? t('common.lowBattery') : t('common.safe')}
                 </Text>
               </View>
             </View>
@@ -231,7 +284,7 @@ export default function ParentHome() {
       })}
 
       <View style={s.card}>
-        <Text style={s.cardLabel}>오늘 사용 시간</Text>
+        <Text style={s.cardLabel}>{t('parent.home.todayUsage')}</Text>
         <View style={s.usageRow}>
           {children.map((c) => {
             const sd = screenMap[c.uid];
@@ -244,7 +297,7 @@ export default function ParentHome() {
                 <Text style={s.usageName}>{c.name}</Text>
                 <Text style={[s.usageTime, warn && { color: Colors.warn }]}>{fmt(usedMin)}</Text>
                 <View style={s.bar}><View style={[s.barFill, { width: `${Math.min(100, pct)}%`, backgroundColor: warn ? '#BA7517' : Colors.primary }]} /></View>
-                <Text style={s.usageLimit}>제한 {fmt(limitMin)}</Text>
+                <Text style={s.usageLimit}>{t('parent.home.limit', { time: fmt(limitMin) })}</Text>
               </View>
             );
           })}
@@ -253,8 +306,8 @@ export default function ParentHome() {
 
       <View style={s.card}>
         <TouchableOpacity style={s.alertHeader} onPress={() => setShowAllAlerts(!showAllAlerts)}>
-          <Text style={s.cardLabel}>알림 이력</Text>
-          <Text style={s.alertToggle}>{showAllAlerts ? '접기' : '전체 보기'}</Text>
+          <Text style={s.cardLabel}>{t('parent.home.alertHistory')}</Text>
+          <Text style={s.alertToggle}>{showAllAlerts ? t('parent.home.collapse') : t('parent.home.showAll')}</Text>
         </TouchableOpacity>
         {(() => {
           const allAlerts = [
@@ -263,18 +316,22 @@ export default function ParentHome() {
             ...timeRequests,
           ].sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
           const displayed = showAllAlerts ? allAlerts : allAlerts.slice(0, 5);
-          if (allAlerts.length === 0) return <Text style={s.notiText}>알림 없음</Text>;
+          if (allAlerts.length === 0) return <Text style={s.notiText}>{t('parent.home.noAlerts')}</Text>;
           return displayed.map(a => {
             const icon = a.type === 'sos' ? '🚨' : a.type === 'geo' ? (a.alertType === 'enter' ? '📍' : '🚶') : '⏰';
+            // childNames 맵에서 부모가 설정한 이름 우선 사용
+            const resolvedName = (a.childUid && childNamesMap[a.childUid]) || a.childName;
             const text = a.type === 'sos'
-              ? `${a.childName} SOS`
+              ? t('parent.home.sosAlertText', { name: resolvedName })
               : a.type === 'geo'
-              ? `${a.childName} ${a.geofenceName} ${a.alertType === 'enter' ? '도착' : '이탈'}`
-              : `${a.childName} +${a.extraMinutes}분 요청`;
+              ? (a.alertType === 'enter'
+                ? t('parent.home.geoArrival', { name: resolvedName, place: a.geofenceName })
+                : t('parent.home.geoDeparture', { name: resolvedName, place: a.geofenceName }))
+              : t('parent.home.timeRequest', { name: resolvedName, min: a.extraMinutes });
             const statusText = a.type === 'sos'
-              ? (a.resolved ? ' · 확인됨' : '')
+              ? (a.resolved ? t('parent.home.confirmed') : '')
               : a.type === 'time'
-              ? (a.status === 'approved' ? ' · 승인' : a.status === 'rejected' ? ' · 거절' : ' · 대기중')
+              ? (a.status === 'approved' ? t('parent.home.approved') : a.status === 'rejected' ? t('parent.home.rejected') : t('parent.home.pending'))
               : '';
             return (
               <View key={`${a.type}-${a.id}`} style={[s.alertRow, a.type === 'sos' && !a.resolved && s.alertRowPending]}>
@@ -285,7 +342,7 @@ export default function ParentHome() {
                 </View>
                 {a.type === 'sos' && !a.resolved && (
                   <TouchableOpacity style={s.resolveBtn} onPress={() => resolveSOS(familyId, a.id)}>
-                    <Text style={s.resolveBtnText}>확인</Text>
+                    <Text style={s.resolveBtnText}>{t('common.confirm')}</Text>
                   </TouchableOpacity>
                 )}
               </View>

@@ -6,13 +6,19 @@ import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { subscribeScreentime, updateAppLimit, updateDailyLimit, updateWeeklyLimits, updateSchedule, fetchScreentimeHistory } from '../../src/services/screentimeService';
 import { BLOCKABLE_APPS, updateBlockedApps, updateBlockSchedule, subscribeAppBlocking } from '../../src/services/appBlockingService';
+import { useTranslation } from 'react-i18next';
 
-function fmt(m) { const h = Math.floor(m / 60); const mm = m % 60; return h > 0 ? `${h}시간 ${mm}분` : `${mm}분`; }
-
-const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+const DAY_INDICES = [0, 1, 2, 3, 4, 5, 6];
 
 export default function ParentScreenTime() {
+  const { t } = useTranslation();
   const { familyId } = useAuth();
+
+  function fmt(m) {
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return h > 0 ? t('fmt.hours', { h, m: mm }) : t('fmt.minutes', { m: mm });
+  }
   const [children, setChildren]     = useState([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [screenData, setScreenData] = useState(null);
@@ -177,7 +183,7 @@ export default function ParentScreenTime() {
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <View style={s.headerRow}>
-        <Text style={s.title}>사용 시간</Text>
+        <Text style={s.title}>{t('parent.screentime.title')}</Text>
         <View style={s.tabs}>
           {children.map((c, i) => (
             <TouchableOpacity key={c.uid} style={i === selectedIdx ? s.tabActive : s.tab} onPress={() => setSelectedIdx(i)}>
@@ -193,7 +199,7 @@ export default function ParentScreenTime() {
 
         {/* 일일 제한 시간 설정 */}
         <View style={s.limitSection}>
-          <Text style={s.limitLabel}>일일 제한 시간</Text>
+          <Text style={s.limitLabel}>{t('parent.screentime.dailyLimit')}</Text>
           <View style={s.limitRow}>
             <TouchableOpacity
               style={s.limitBtn}
@@ -202,7 +208,7 @@ export default function ParentScreenTime() {
                 if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next);
               }}
             >
-              <Text style={s.limitBtnText}>-30분</Text>
+              <Text style={s.limitBtnText}>-30{t('common.minutes')}</Text>
             </TouchableOpacity>
             <Text style={s.limitValue}>{fmt(dailyLimit)}</Text>
             <TouchableOpacity
@@ -212,7 +218,7 @@ export default function ParentScreenTime() {
                 if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next);
               }}
             >
-              <Text style={s.limitBtnText}>+30분</Text>
+              <Text style={s.limitBtnText}>+30{t('common.minutes')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -221,7 +227,7 @@ export default function ParentScreenTime() {
       {/* 요일별 시간 제한 */}
       <View style={s.card}>
         <View style={s.row}>
-          <Text style={s.cardLabel}>요일별 제한</Text>
+          <Text style={s.cardLabel}>{t('parent.screentime.weeklyLimit')}</Text>
           <TouchableOpacity onPress={() => {
             if (weeklyLimits) {
               if (showWeekly) setShowWeekly(false);
@@ -230,17 +236,17 @@ export default function ParentScreenTime() {
               handleEnableWeekly();
             }
           }}>
-            <Text style={s.weeklyToggle}>{weeklyLimits ? (showWeekly ? '접기' : '펼치기') : '+ 설정'}</Text>
+            <Text style={s.weeklyToggle}>{weeklyLimits ? (showWeekly ? t('parent.screentime.collapse') : t('parent.screentime.expand')) : t('parent.screentime.setup')}</Text>
           </TouchableOpacity>
         </View>
         {weeklyLimits && showWeekly && (
           <>
-            {DAY_LABELS.map((label, i) => {
+            {DAY_INDICES.map((i) => {
               const val = weeklyLimits[i] !== undefined ? weeklyLimits[i] : dailyLimit;
               const isToday = new Date().getDay() === i;
               return (
                 <View key={i} style={[s.weeklyRow, isToday && s.weeklyRowToday]}>
-                  <Text style={[s.weeklyDay, isToday && s.weeklyDayToday]}>{label}</Text>
+                  <Text style={[s.weeklyDay, isToday && s.weeklyDayToday]}>{t(`dayLabels.${i}`)}</Text>
                   <View style={s.weeklyControls}>
                     <TouchableOpacity style={s.weeklyBtn} onPress={() => handleWeeklyChange(i, -30)}>
                       <Text style={s.weeklyBtnText}>-30</Text>
@@ -254,15 +260,15 @@ export default function ParentScreenTime() {
               );
             })}
             <TouchableOpacity style={s.weeklyDisableBtn} onPress={handleDisableWeekly}>
-              <Text style={s.weeklyDisableText}>요일별 제한 해제 (기본 제한으로)</Text>
+              <Text style={s.weeklyDisableText}>{t('parent.screentime.disableWeekly')}</Text>
             </TouchableOpacity>
           </>
         )}
         {weeklyLimits && !showWeekly && (
           <View style={s.weeklyPreview}>
-            {DAY_LABELS.map((label, i) => (
+            {DAY_INDICES.map((i) => (
               <View key={i} style={s.weeklyPreviewItem}>
-                <Text style={[s.weeklyPreviewDay, new Date().getDay() === i && s.weeklyDayToday]}>{label}</Text>
+                <Text style={[s.weeklyPreviewDay, new Date().getDay() === i && s.weeklyDayToday]}>{t(`dayLabels.${i}`)}</Text>
                 <Text style={s.weeklyPreviewVal}>{weeklyLimits[i] !== undefined ? `${Math.floor(weeklyLimits[i]/60)}h` : '-'}</Text>
               </View>
             ))}
@@ -273,22 +279,22 @@ export default function ParentScreenTime() {
       {/* 추가 시간 요청 목록 */}
       {pendingForChild.length > 0 && (
         <>
-          <Text style={s.section}>추가 시간 요청</Text>
+          <Text style={s.section}>{t('parent.screentime.timeRequest')}</Text>
           {pendingForChild.map((req) => (
             <View key={req.id} style={s.reqCard}>
               <View style={s.reqHeader}>
                 <Text style={s.reqName}>{req.childName}</Text>
                 <View style={s.reqBadge}>
-                  <Text style={s.reqBadgeText}>+{req.extraMinutes}분</Text>
+                  <Text style={s.reqBadgeText}>+{req.extraMinutes}{t('common.minutes')}</Text>
                 </View>
               </View>
               <Text style={s.reqReason}>"{req.reason}"</Text>
               <View style={s.reqBtns}>
                 <TouchableOpacity style={s.rejectBtn} onPress={() => handleReject(req)}>
-                  <Text style={s.rejectBtnText}>거절</Text>
+                  <Text style={s.rejectBtnText}>{t('parent.screentime.reject')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={s.approveBtn} onPress={() => handleApprove(req)}>
-                  <Text style={s.approveBtnText}>승인 +{req.extraMinutes}분</Text>
+                  <Text style={s.approveBtnText}>{t('parent.screentime.approve', { min: req.extraMinutes })}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -296,14 +302,14 @@ export default function ParentScreenTime() {
         </>
       )}
 
-      <Text style={s.section}>앱 사용량</Text>
+      <Text style={s.section}>{t('parent.screentime.appUsage')}</Text>
       {appEntries.map(([key, a]) => (
         <View key={key} style={s.appCard}>
           <View style={s.appRow}>
             <View style={[s.appIcon, { backgroundColor: a.color }]}><Text style={[s.appIconText, { color: a.tc }]}>{a.code}</Text></View>
             <View style={s.appInfo}>
               <Text style={s.appName}>{a.name}</Text>
-              <Text style={s.appTime}>{a.used}분{a.limit ? ` / ${a.limit}분` : ''}</Text>
+              <Text style={s.appTime}>{a.used}{t('common.minutes')}{a.limit ? ` / ${a.limit}${t('common.minutes')}` : ''}</Text>
             </View>
             {a.limit ? (
               <TouchableOpacity style={[s.toggle, s.toggleOn]} onPress={() => handleToggleLimit(key, a)}>
@@ -311,7 +317,7 @@ export default function ParentScreenTime() {
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={s.unlimit} onPress={() => handleToggleLimit(key, a)}>
-                <Text style={s.unlimitText}>제한 없음</Text>
+                <Text style={s.unlimitText}>{t('parent.screentime.noLimit')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -326,7 +332,7 @@ export default function ParentScreenTime() {
               >
                 <Text style={s.appLimitBtnText}>-15</Text>
               </TouchableOpacity>
-              <Text style={s.appLimitVal}>{a.limit}분</Text>
+              <Text style={s.appLimitVal}>{a.limit}{t('common.minutes')}</Text>
               <TouchableOpacity
                 style={s.appLimitBtn}
                 onPress={() => {
@@ -342,9 +348,9 @@ export default function ParentScreenTime() {
       ))}
 
       {/* 앱 차단 */}
-      <Text style={[s.section, { marginTop: 20 }]}>앱 차단</Text>
+      <Text style={[s.section, { marginTop: 20 }]}>{t('parent.screentime.appBlocking')}</Text>
       <View style={s.card}>
-        <Text style={s.blockDesc}>차단된 앱은 자녀 기기에서 사용할 수 없습니다</Text>
+        <Text style={s.blockDesc}>{t('parent.screentime.blockDesc')}</Text>
         {Object.entries(BLOCKABLE_APPS).map(([key, app]) => {
           const isBlocked = blockedApps[key] === true;
           return (
@@ -370,13 +376,13 @@ export default function ParentScreenTime() {
         {/* 스케줄 기반 차단 */}
         <View style={[s.schedRow, { borderBottomWidth: 0, marginTop: 8 }]}>
           <View style={s.schedLeft}>
-            <Text style={s.schedName}>🕐 시간대 차단</Text>
+            <Text style={s.schedName}>{t('parent.screentime.scheduleBlock')}</Text>
             <TouchableOpacity onPress={() => {
               const updated = { ...blockSchedule, enabled: !blockSchedule.enabled };
               setBlockSchedule(updated);
               if (selectedChild) updateBlockSchedule(familyId, selectedChild.uid, updated);
             }}>
-              <Text style={s.schedToggle}>{blockSchedule.enabled ? '켜짐' : '꺼짐'}</Text>
+              <Text style={s.schedToggle}>{blockSchedule.enabled ? t('common.on') : t('common.off')}</Text>
             </TouchableOpacity>
           </View>
           {blockSchedule.enabled && (
@@ -392,22 +398,22 @@ export default function ParentScreenTime() {
           )}
         </View>
         {blockSchedule.enabled && (
-          <Text style={s.blockSchedHint}>이 시간에는 차단된 모든 앱이 자동으로 잠깁니다</Text>
+          <Text style={s.blockSchedHint}>{t('parent.screentime.blockSchedHint')}</Text>
         )}
       </View>
 
-      <Text style={[s.section, { marginTop: 20 }]}>시간표</Text>
+      <Text style={[s.section, { marginTop: 20 }]}>{t('parent.screentime.schedule')}</Text>
       <View style={s.card}>
         {/* 잠자는 시간 */}
         <View style={s.schedRow}>
           <View style={s.schedLeft}>
-            <Text style={s.schedName}>🌙 잠자는 시간</Text>
+            <Text style={s.schedName}>{t('parent.screentime.sleepTime')}</Text>
             <TouchableOpacity onPress={() => {
               const updated = { ...schedule, sleep: { ...schedule.sleep, enabled: !schedule.sleep.enabled } };
               setSchedule(updated);
               if (selectedChild) updateSchedule(familyId, selectedChild.uid, updated);
             }}>
-              <Text style={s.schedToggle}>{schedule.sleep.enabled ? '켜짐' : '꺼짐'}</Text>
+              <Text style={s.schedToggle}>{schedule.sleep.enabled ? t('common.on') : t('common.off')}</Text>
             </TouchableOpacity>
           </View>
           {schedule.sleep.enabled && (
@@ -425,13 +431,13 @@ export default function ParentScreenTime() {
         {/* 공부 시간 */}
         <View style={[s.schedRow, { borderBottomWidth: 0 }]}>
           <View style={s.schedLeft}>
-            <Text style={s.schedName}>📚 공부 시간</Text>
+            <Text style={s.schedName}>{t('parent.screentime.studyTime')}</Text>
             <TouchableOpacity onPress={() => {
               const updated = { ...schedule, study: { ...schedule.study, enabled: !schedule.study.enabled } };
               setSchedule(updated);
               if (selectedChild) updateSchedule(familyId, selectedChild.uid, updated);
             }}>
-              <Text style={s.schedToggle}>{schedule.study.enabled ? '켜짐' : '꺼짐'}</Text>
+              <Text style={s.schedToggle}>{schedule.study.enabled ? t('common.on') : t('common.off')}</Text>
             </TouchableOpacity>
           </View>
           {schedule.study.enabled && (
@@ -451,12 +457,12 @@ export default function ParentScreenTime() {
       {/* 주간 리포트 */}
       <View style={s.card}>
         <TouchableOpacity style={s.row} onPress={() => setShowReport(!showReport)}>
-          <Text style={s.cardLabel}>주간 리포트</Text>
-          <Text style={s.weeklyToggle}>{showReport ? '접기' : '펼치기'}</Text>
+          <Text style={s.cardLabel}>{t('parent.screentime.weeklyReport')}</Text>
+          <Text style={s.weeklyToggle}>{showReport ? t('parent.screentime.collapse') : t('parent.screentime.expand')}</Text>
         </TouchableOpacity>
         {showReport && (
           reportData.length === 0 ? (
-            <Text style={s.reportEmpty}>아직 기록이 없어요. 내일부터 쌓입니다!</Text>
+            <Text style={s.reportEmpty}>{t('parent.screentime.noReport')}</Text>
           ) : (
             <>
               {/* 막대 차트 */}
@@ -464,14 +470,14 @@ export default function ParentScreenTime() {
                 {reportData.slice().reverse().map((item) => {
                   const pct = item.dailyLimit > 0 ? Math.min(100, Math.round((item.dailyUsage / item.dailyLimit) * 100)) : 0;
                   const over = item.dailyUsage > item.dailyLimit;
-                  const dayLabel = DAY_LABELS[new Date(item.date).getDay()];
+                  const dayLabel = t(`dayLabels.${new Date(item.date).getDay()}`);
                   return (
                     <View key={item.date} style={s.reportBarItem}>
                       <View style={s.reportBarBg}>
                         <View style={[s.reportBarFill, { height: `${pct}%`, backgroundColor: over ? Colors.danger : Colors.primary }]} />
                       </View>
                       <Text style={s.reportBarDay}>{dayLabel}</Text>
-                      <Text style={s.reportBarVal}>{item.dailyUsage}분</Text>
+                      <Text style={s.reportBarVal}>{item.dailyUsage}{t('common.minutes')}</Text>
                     </View>
                   );
                 })}
@@ -479,7 +485,7 @@ export default function ParentScreenTime() {
               {/* 평균 */}
               <View style={s.reportSummary}>
                 <Text style={s.reportSummaryText}>
-                  주평균 {Math.round(reportData.reduce((s, d) => s + (d.dailyUsage || 0), 0) / reportData.length)}분 / 일
+                  {t('parent.screentime.weekAvg', { avg: Math.round(reportData.reduce((sum, d) => sum + (d.dailyUsage || 0), 0) / reportData.length) })}
                 </Text>
               </View>
             </>
@@ -493,7 +499,7 @@ export default function ParentScreenTime() {
           <View style={s.pickerOverlay}>
             <View style={s.pickerCard}>
               <Text style={s.pickerTitle}>
-                {timePicker.type === 'sleep' ? '잠자는 시간' : timePicker.type === 'study' ? '공부 시간' : '시간대 차단'} - {timePicker.field === 'start' ? '시작' : '종료'}
+                {timePicker.type === 'sleep' ? t('parent.screentime.pickerSleep') : timePicker.type === 'study' ? t('parent.screentime.pickerStudy') : t('parent.screentime.pickerBlock')} - {timePicker.field === 'start' ? t('parent.screentime.pickerStart') : t('parent.screentime.pickerEnd')}
               </Text>
               <View style={s.pickerGrid}>
                 {Array.from({ length: 24 }, (_, h) => {
@@ -524,7 +530,7 @@ export default function ParentScreenTime() {
                 })}
               </View>
               <TouchableOpacity style={s.pickerClose} onPress={() => setTimePicker(null)}>
-                <Text style={s.pickerCloseText}>닫기</Text>
+                <Text style={s.pickerCloseText}>{t('common.close')}</Text>
               </TouchableOpacity>
             </View>
           </View>

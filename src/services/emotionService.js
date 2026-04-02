@@ -42,6 +42,9 @@ export function subscribeLatestEmotion(familyId, childUid, callback) {
     } else {
       callback(null);
     }
+  }, (err) => {
+    console.error('[감정 구독 오류]', childUid, err);
+    callback(null);
   });
 }
 

@@ -119,9 +119,19 @@ export async function checkGeofences(familyId, childUid, latitude, longitude) {
   // 진입/이탈 발생 시 Firestore에 저장 → Cloud Functions(onGeofenceAlert)가 푸시 전송
   if (alerts.length > 0) {
     let childName = '자녀';
-    const childDoc = await getDoc(doc(db, 'users', childUid));
-    if (childDoc.exists()) {
-      childName = childDoc.data().name || childDoc.data().email?.split('@')[0] || '자녀';
+    // childNames 맵 우선 사용
+    try {
+      const famDoc = await getDoc(doc(db, 'families', familyId));
+      if (famDoc.exists()) {
+        const customName = (famDoc.data().childNames || {})[childUid];
+        if (customName) childName = customName;
+      }
+    } catch {}
+    if (childName === '자녀') {
+      const childDoc = await getDoc(doc(db, 'users', childUid));
+      if (childDoc.exists()) {
+        childName = childDoc.data().name || childDoc.data().email?.split('@')[0] || '자녀';
+      }
     }
 
     for (const { geo, type } of alerts) {

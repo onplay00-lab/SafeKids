@@ -74,26 +74,42 @@ export function subscribeSOS(familyId, callback) {
     limit(20)
   );
 
+  // childNames 맵을 한 번만 조회 (SOS 알림마다 개별 users 문서 읽기 방지)
+  let childNamesMap = {};
+  try {
+    const famDoc = await getDoc(doc(db, 'families', familyId));
+    if (famDoc.exists()) childNamesMap = famDoc.data().childNames || {};
+  } catch {}
+
   return onSnapshot(q, async (snapshot) => {
-    const alerts = await Promise.all(
-      snapshot.docs.map(async (d) => {
-        const data = d.data();
-        // 자녀 이름 캐시 없이 직접 fetch (소량)
-        let childName = '자녀';
-        try {
-          const childDoc = await getDoc(doc(db, 'users', data.childUid));
-          if (childDoc.exists()) {
-            childName = childDoc.data().name || childDoc.data().email?.split('@')[0] || '자녀';
+    try {
+      const alerts = await Promise.all(
+        snapshot.docs.map(async (d) => {
+          const data = d.data();
+          let childName = childNamesMap[data.childUid] || '자녀';
+          if (childName === '자녀') {
+            try {
+              const childDoc = await getDoc(doc(db, 'users', data.childUid));
+              if (childDoc.exists()) {
+                childName = childDoc.data().name || childDoc.data().email?.split('@')[0] || '자녀';
+              }
+            } catch {}
           }
-        } catch {}
-        return {
-          id: d.id,
-          ...data,
-          childName,
-          createdAt: data.createdAt?.toDate() || new Date(),
-        };
-      })
-    );
-    callback(alerts);
+          return {
+            id: d.id,
+            ...data,
+            childName,
+            createdAt: data.createdAt?.toDate() || new Date(),
+          };
+        })
+      );
+      callback(alerts);
+    } catch (err) {
+      console.error('[SOS 구독 처리 오류]', err);
+      callback([]);
+    }
+  }, (err) => {
+    console.error('[SOS 구독 오류]', err);
+    callback([]);
   });
 }

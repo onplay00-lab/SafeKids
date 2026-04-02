@@ -8,27 +8,33 @@ import { db, auth } from '../../constants/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Colors } from '../../constants/Colors';
 import { addPromise, deletePromise, subscribePromises } from '../../src/services/promiseService';
+import { useTranslation } from 'react-i18next';
+import i18next from '../../src/i18n';
 
 function generateCode() { return Math.random().toString(36).substring(2,8).toUpperCase(); }
 
-// 자녀 이름 Firestore에 저장
+// 자녀 이름 Firestore에 저장 (families + users 양쪽 동기화)
 async function saveChildName(familyId, childUid, name) {
-  await updateDoc(doc(db, 'families', familyId), {
-    [`childNames.${childUid}`]: name,
-  });
+  await Promise.all([
+    updateDoc(doc(db, 'families', familyId), {
+      [`childNames.${childUid}`]: name,
+    }),
+    updateDoc(doc(db, 'users', childUid), { name }),
+  ]);
 }
 
-const NOTIF_ITEMS = [
-  { key: 'geofence',    label: '지오펜스 알림',  desc: '자녀 안전 구역 진입/이탈' },
-  { key: 'sos',         label: 'SOS 알림',       desc: '자녀 긴급 신호' },
-  { key: 'timeRequest', label: '시간 요청 알림', desc: '자녀의 추가 시간 요청' },
-  { key: 'battery',     label: '저배터리 알림',  desc: '자녀 기기 배터리 20% 이하' },
+const NOTIF_KEYS = [
+  { key: 'geofence',    labelKey: 'parent.settings.notifGeofence',  descKey: 'parent.settings.notifGeofenceDesc' },
+  { key: 'sos',         labelKey: 'parent.settings.notifSOS',       descKey: 'parent.settings.notifSOSDesc' },
+  { key: 'timeRequest', labelKey: 'parent.settings.notifTimeRequest', descKey: 'parent.settings.notifTimeRequestDesc' },
+  { key: 'battery',     labelKey: 'parent.settings.notifBattery',  descKey: 'parent.settings.notifBatteryDesc' },
 ];
 
 const DEFAULT_NOTIF = { geofence: true, sos: true, timeRequest: true, battery: true };
 
 export default function ParentSettings() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { user, familyId, setFamilyId } = useAuth();
   const [inviteCode, setInviteCode] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -102,7 +108,7 @@ export default function ParentSettings() {
   async function handleAddContact() {
     const name = newContactName.trim();
     const phone = newContactPhone.trim().replace(/[^0-9]/g, '');
-    if (!name || !phone) { Alert.alert('이름과 전화번호를 입력해주세요'); return; }
+    if (!name || !phone) { Alert.alert(t('parent.settings.namePhoneRequired')); return; }
     const updated = [...contacts, { name, phone, id: Date.now().toString() }];
     setContacts(updated);
     await updateDoc(doc(db, 'families', familyId), { emergencyContacts: updated });
@@ -126,9 +132,9 @@ export default function ParentSettings() {
   }
 
   function handleDeletePromise(p) {
-    Alert.alert('약속 삭제', `"${p.text}" 삭제할까요?`, [
-      { text: '취소', style: 'cancel' },
-      { text: '삭제', style: 'destructive', onPress: () => deletePromise(familyId, p.id) },
+    Alert.alert(t('parent.settings.deletePromise'), t('parent.settings.deletePromiseMsg', { text: p.text }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: () => deletePromise(familyId, p.id) },
     ]);
   }
 
@@ -195,7 +201,7 @@ export default function ParentSettings() {
       }
     } catch (e) {
       console.error(e);
-      Alert.alert('오류', '초대 코드 생성에 실패했습니다');
+      Alert.alert(t('common.error'), t('parent.settings.inviteCodeFailed'));
     }
     setLoading(false);
   }
@@ -210,41 +216,41 @@ export default function ParentSettings() {
       await signOut(auth);
       router.replace('/login');
     } catch (e) {
-      Alert.alert('오류', '로그아웃에 실패했습니다');
+      Alert.alert(t('common.error'), t('parent.settings.logoutFailed'));
     }
   }
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <Text style={s.title}>설정</Text>
+      <Text style={s.title}>{t('parent.settings.title')}</Text>
       <View style={s.profile}>
         <View style={s.profileAvatar}><Text style={s.profileAvatarText}>P</Text></View>
-        <Text style={s.profileName}>부모 계정</Text>
+        <Text style={s.profileName}>{t('parent.settings.parentAccount')}</Text>
         <Text style={s.profileEmail}>{user?.email || ''}</Text>
       </View>
 
-      <Text style={s.section}>초대 코드</Text>
+      <Text style={s.section}>{t('parent.settings.inviteCode')}</Text>
       {inviteCode ? (
         <View style={s.codeBox}>
-          <Text style={s.codeLabel}>이 코드를 자녀에게 알려주세요</Text>
+          <Text style={s.codeLabel}>{t('parent.settings.shareCode')}</Text>
           <Text style={s.codeText}>{inviteCode}</Text>
-          <Text style={s.codeHint}>자녀가 가족 연결 화면에서 이 코드를 입력합니다</Text>
+          <Text style={s.codeHint}>{t('parent.settings.codeHint')}</Text>
         </View>
       ) : (
         <TouchableOpacity style={s.addBtn} onPress={handleShowInviteCode} disabled={loading}>
-          {loading ? <ActivityIndicator color={Colors.primary} /> : <Text style={s.addBtnText}>+ 자녀 추가 (초대 코드)</Text>}
+          {loading ? <ActivityIndicator color={Colors.primary} /> : <Text style={s.addBtnText}>{t('parent.settings.addChild')}</Text>}
         </TouchableOpacity>
       )}
 
       {/* 부모 목록 */}
       {parentList.length > 1 && (
         <>
-          <Text style={[s.section, {marginTop:24}]}>부모 계정</Text>
+          <Text style={[s.section, {marginTop:24}]}>{t('parent.settings.parentAccounts')}</Text>
           <View style={s.card}>
             {parentList.map((p, i) => (
               <View key={p.uid} style={[s.childRow, i < parentList.length - 1 && s.settingRowBorder]}>
                 <View style={s.childInfo}>
-                  <Text style={s.childName}>{p.email?.split('@')[0] || '부모'}{p.isMe ? ' (나)' : ''}</Text>
+                  <Text style={s.childName}>{p.email?.split('@')[0] || t('common.parent')}{p.isMe ? ` ${t('parent.settings.me')}` : ''}</Text>
                   <Text style={s.childEmail}>{p.email}</Text>
                 </View>
               </View>
@@ -256,7 +262,7 @@ export default function ParentSettings() {
       {/* 자녀 관리 */}
       {childList.length > 0 && (
         <>
-          <Text style={[s.section, {marginTop:24}]}>자녀 관리</Text>
+          <Text style={[s.section, {marginTop:24}]}>{t('parent.settings.childManagement')}</Text>
           <View style={s.card}>
             {childList.map((child, i) => (
               <View key={child.uid} style={[s.childRow, i < childList.length - 1 && s.settingRowBorder]}>
@@ -266,16 +272,16 @@ export default function ParentSettings() {
                       style={s.editInput}
                       value={editName}
                       onChangeText={setEditName}
-                      placeholder="이름 입력"
+                      placeholder={t('parent.settings.enterName')}
                       placeholderTextColor={Colors.textHint}
                       autoFocus
                       onSubmitEditing={() => handleSaveChildName(child.uid)}
                     />
                     <TouchableOpacity style={s.editSaveBtn} onPress={() => handleSaveChildName(child.uid)}>
-                      <Text style={s.editSaveBtnText}>저장</Text>
+                      <Text style={s.editSaveBtnText}>{t('common.save')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={() => { setEditingChild(null); setEditName(''); }}>
-                      <Text style={s.addCancelText}>취소</Text>
+                      <Text style={s.addCancelText}>{t('common.cancel')}</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
@@ -285,7 +291,7 @@ export default function ParentSettings() {
                   >
                     <Text style={s.childName}>{childNames[child.uid] || child.defaultName}</Text>
                     <Text style={s.childEmail}>{child.email}</Text>
-                    <Text style={s.childEditHint}>탭하여 이름 변경</Text>
+                    <Text style={s.childEditHint}>{t('parent.settings.tapToChangeName')}</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -294,10 +300,10 @@ export default function ParentSettings() {
         </>
       )}
 
-      <Text style={[s.section, {marginTop:24}]}>가족 약속</Text>
+      <Text style={[s.section, {marginTop:24}]}>{t('parent.settings.familyPromise')}</Text>
       <View style={s.card}>
         {promises.length === 0 && !showAddInput && (
-          <Text style={s.emptyHint}>아직 약속이 없어요. 추가해보세요!</Text>
+          <Text style={s.emptyHint}>{t('parent.settings.noPromises')}</Text>
         )}
         {promises.map((p) => (
           <TouchableOpacity key={p.id} style={s.promiseRow} onLongPress={() => handleDeletePromise(p)}>
@@ -309,7 +315,7 @@ export default function ParentSettings() {
           <View style={s.addRow}>
             <TextInput
               style={s.addInput}
-              placeholder="새 약속 입력"
+              placeholder={t('parent.settings.newPromise')}
               placeholderTextColor={Colors.textHint}
               value={newPromiseText}
               onChangeText={setNewPromiseText}
@@ -317,24 +323,24 @@ export default function ParentSettings() {
               autoFocus
             />
             <TouchableOpacity style={s.addSaveBtn} onPress={handleAddPromise}>
-              <Text style={s.addSaveBtnText}>추가</Text>
+              <Text style={s.addSaveBtnText}>{t('common.add')}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => { setShowAddInput(false); setNewPromiseText(''); }}>
-              <Text style={s.addCancelText}>취소</Text>
+              <Text style={s.addCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity style={s.addPromiseBtn} onPress={() => setShowAddInput(true)}>
-            <Text style={s.addPromiseBtnText}>+ 약속 추가</Text>
+            <Text style={s.addPromiseBtnText}>{t('parent.settings.addPromise')}</Text>
           </TouchableOpacity>
         )}
       </View>
 
       {/* 긴급연락처 */}
-      <Text style={[s.section, {marginTop:24}]}>긴급연락처</Text>
+      <Text style={[s.section, {marginTop:24}]}>{t('parent.settings.emergencyContacts')}</Text>
       <View style={s.card}>
         {contacts.length === 0 && !showAddContact && (
-          <Text style={s.emptyHint}>긴급 시 자녀가 바로 전화할 수 있는 연락처를 추가하세요</Text>
+          <Text style={s.emptyHint}>{t('parent.settings.emergencyContactsHint')}</Text>
         )}
         {contacts.map((c, i) => (
           <View key={c.id} style={[s.contactRow, i < contacts.length - 1 && s.settingRowBorder]}>
@@ -354,7 +360,7 @@ export default function ParentSettings() {
           <View style={s.addContactForm}>
             <TextInput
               style={s.addInput}
-              placeholder="이름 (예: 엄마)"
+              placeholder={t('parent.settings.namePlaceholder')}
               placeholderTextColor={Colors.textHint}
               value={newContactName}
               onChangeText={setNewContactName}
@@ -362,7 +368,7 @@ export default function ParentSettings() {
             />
             <TextInput
               style={[s.addInput, { marginTop: 8 }]}
-              placeholder="전화번호 (예: 01012345678)"
+              placeholder={t('parent.settings.phonePlaceholder')}
               placeholderTextColor={Colors.textHint}
               value={newContactPhone}
               onChangeText={setNewContactPhone}
@@ -370,34 +376,64 @@ export default function ParentSettings() {
             />
             <View style={s.addRow}>
               <TouchableOpacity style={s.addSaveBtn} onPress={handleAddContact}>
-                <Text style={s.addSaveBtnText}>추가</Text>
+                <Text style={s.addSaveBtnText}>{t('common.add')}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => { setShowAddContact(false); setNewContactName(''); setNewContactPhone(''); }}>
-                <Text style={s.addCancelText}>취소</Text>
+                <Text style={s.addCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
           <TouchableOpacity style={s.addPromiseBtn} onPress={() => setShowAddContact(true)}>
-            <Text style={s.addPromiseBtnText}>+ 연락처 추가</Text>
+            <Text style={s.addPromiseBtnText}>{t('parent.settings.addContact')}</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      <Text style={[s.section, {marginTop:24}]}>알림 설정</Text>
+      <Text style={[s.section, {marginTop:24}]}>{t('parent.settings.language')}</Text>
       <View style={s.card}>
-        {NOTIF_ITEMS.map(({ key, label, desc }, i) => {
+        <View style={s.langRow}>
+          <TouchableOpacity
+            style={[s.langBtn, i18next.language === 'ko' && s.langBtnActive]}
+            onPress={async () => {
+              await i18next.changeLanguage('ko');
+              await AsyncStorage.setItem('user_language', 'ko');
+              if (user?.uid) {
+                try { await updateDoc(doc(db, 'users', user.uid), { language: 'ko' }); } catch (e) {}
+              }
+            }}
+          >
+            <Text style={[s.langBtnText, i18next.language === 'ko' && s.langBtnTextActive]}>{t('parent.settings.korean')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.langBtn, i18next.language === 'en' && s.langBtnActive]}
+            onPress={async () => {
+              await i18next.changeLanguage('en');
+              await AsyncStorage.setItem('user_language', 'en');
+              if (user?.uid) {
+                try { await updateDoc(doc(db, 'users', user.uid), { language: 'en' }); } catch (e) {}
+              }
+            }}
+          >
+            <Text style={[s.langBtnText, i18next.language === 'en' && s.langBtnTextActive]}>{t('parent.settings.english')}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <Text style={[s.section, {marginTop:24}]}>{t('parent.settings.notifSettings')}</Text>
+      <View style={s.card}>
+        {NOTIF_KEYS.map(({ key, labelKey, descKey }, i) => {
           const isOn = notifSettings[key];
           return (
             <TouchableOpacity
               key={key}
-              style={[s.settingRow, i < NOTIF_ITEMS.length - 1 && s.settingRowBorder]}
+              style={[s.settingRow, i < NOTIF_KEYS.length - 1 && s.settingRowBorder]}
               onPress={() => handleToggleNotif(key)}
               activeOpacity={0.7}
             >
               <View style={s.settingInfo}>
-                <Text style={s.settingName}>{label}</Text>
-                <Text style={s.settingDesc}>{desc}</Text>
+                <Text style={s.settingName}>{t(labelKey)}</Text>
+                <Text style={s.settingDesc}>{t(descKey)}</Text>
               </View>
               <View style={[s.toggle, isOn && s.toggleOn]}>
                 <View style={[s.toggleThumb, isOn && s.toggleThumbOn]} />
@@ -408,7 +444,7 @@ export default function ParentSettings() {
       </View>
 
       <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
-        <Text style={s.logoutText}>로그아웃</Text>
+        <Text style={s.logoutText}>{t('parent.settings.logout')}</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -470,4 +506,9 @@ const s = StyleSheet.create({
   contactDelBtn:    { padding: 4 },
   contactDelText:   { fontSize: 20, color: Colors.textHint },
   addContactForm:   { marginTop: 8 },
+  langRow:          { flexDirection: 'row', gap: 10 },
+  langBtn:          { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1.5, borderColor: Colors.border, alignItems: 'center', backgroundColor: Colors.white },
+  langBtnActive:    { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  langBtnText:      { fontSize: 14, color: Colors.textSecondary },
+  langBtnTextActive:{ fontSize: 14, color: Colors.primary, fontWeight: '600' },
 });

@@ -8,6 +8,79 @@ initializeApp();
 const db = getFirestore();
 
 // ============================================
+// i18n: 서버 사이드 푸시 알림 번역
+// ============================================
+const PUSH_STRINGS = {
+  ko: {
+    "sos.title": "🚨 SOS 알림",
+    "sos.bodyWithAddr": "{{name}}이(가) 위험 신호를 보냈습니다! 위치: {{address}}",
+    "sos.body": "{{name}}이(가) 위험 신호를 보냈습니다!",
+    "geo.enterTitle": "📍 {{place}} 도착",
+    "geo.leaveTitle": "🚶 {{place}} 이탈",
+    "geo.enterBody": "{{name}}이(가) {{place}}에 도착했습니다.",
+    "geo.leaveBody": "{{name}}이(가) {{place}}을(를) 벗어났습니다.",
+    "battery.title": "🔋 저배터리 알림",
+    "battery.body": "{{name}}의 배터리가 {{pct}}%입니다. 충전이 필요해요.",
+    "loud.title": "📢 부모님이 연락을 원해요!",
+    "loud.body": "지금 바로 확인해주세요!",
+    "chat.title": "💬 {{name}}",
+    "chat.defaultName": "가족",
+    "chat.body": "새 메시지가 있어요",
+    "emotion.title": "{{emoji}} {{name}}의 기분",
+    "emotion.body": "오늘 기분: {{label}}",
+    "timeReq.title": "⏰ 추가 시간 요청",
+    "timeReq.body": "{{name}}이(가) {{min}}분 추가를 요청했습니다.",
+    "child": "자녀",
+    "emotions.happy": "행복해", "emotions.excited": "신나", "emotions.calm": "평온해",
+    "emotions.tired": "피곤해", "emotions.sad": "슬퍼", "emotions.angry": "화나",
+    "emotions.scared": "무서워", "emotions.bored": "심심해",
+  },
+  en: {
+    "sos.title": "🚨 SOS Alert",
+    "sos.bodyWithAddr": "{{name}} sent a distress signal! Location: {{address}}",
+    "sos.body": "{{name}} sent a distress signal!",
+    "geo.enterTitle": "📍 Arrived at {{place}}",
+    "geo.leaveTitle": "🚶 Left {{place}}",
+    "geo.enterBody": "{{name}} arrived at {{place}}.",
+    "geo.leaveBody": "{{name}} left {{place}}.",
+    "battery.title": "🔋 Low Battery Alert",
+    "battery.body": "{{name}}'s battery is at {{pct}}%. Please charge.",
+    "loud.title": "📢 Your parent wants to reach you!",
+    "loud.body": "Please check now!",
+    "chat.title": "💬 {{name}}",
+    "chat.defaultName": "Family",
+    "chat.body": "New message",
+    "emotion.title": "{{emoji}} {{name}}'s mood",
+    "emotion.body": "Today's mood: {{label}}",
+    "timeReq.title": "⏰ Extra Time Request",
+    "timeReq.body": "{{name}} requested {{min}} extra minutes.",
+    "child": "Child",
+    "emotions.happy": "Happy", "emotions.excited": "Excited", "emotions.calm": "Calm",
+    "emotions.tired": "Tired", "emotions.sad": "Sad", "emotions.angry": "Angry",
+    "emotions.scared": "Scared", "emotions.bored": "Bored",
+  },
+};
+
+function tr(lang, key, vars = {}) {
+  const strings = PUSH_STRINGS[lang] || PUSH_STRINGS.ko;
+  let s = strings[key] || PUSH_STRINGS.ko[key] || key;
+  for (const [k, v] of Object.entries(vars)) {
+    s = s.replace(new RegExp(`\\{\\{${k}\\}\\}`, "g"), v);
+  }
+  return s;
+}
+
+async function getUserLang(uid) {
+  if (!uid) return "ko";
+  try {
+    const snap = await db.doc(`users/${uid}`).get();
+    return snap.exists ? (snap.data().language || "ko") : "ko";
+  } catch (e) {
+    return "ko";
+  }
+}
+
+// ============================================
 // Expo Push API 전송 헬퍼
 // ============================================
 async function sendExpoPush({ token, title, body, data = {} }) {
@@ -52,31 +125,42 @@ async function getParentTokensAndChildName(familyId, childUid) {
     if (parentSnap.exists) {
       const pData = parentSnap.data();
       parents.push({
+        uid: pid,
         token: pData.pushToken || null,
         notifSettings: pData.notificationSettings || {},
+        lang: pData.language || "ko",
       });
     }
   }
 
+  // childNames 맵 우선, 없으면 users 문서에서 가져오기
   let childName = "자녀";
   if (childUid) {
-    const childSnap = await db.doc(`users/${childUid}`).get();
-    if (childSnap.exists) {
-      const d = childSnap.data();
-      childName = d.name || d.email?.split("@")[0] || "자녀";
+    const customName = (famData.childNames || {})[childUid];
+    if (customName) {
+      childName = customName;
+    } else {
+      const childSnap = await db.doc(`users/${childUid}`).get();
+      if (childSnap.exists) {
+        const d = childSnap.data();
+        childName = d.name || d.email?.split("@")[0] || "자녀";
+      }
     }
   }
 
   return { parents, childName };
 }
 
-// 모든 부모에게 푸시 전송
-async function sendPushToAllParents(parents, notifKey, { title, body, data }) {
+// 모든 부모에게 푸시 전송 (언어별 번역 지원)
+// titleFn, bodyFn: (lang) => string 형태의 함수 또는 고정 문자열
+async function sendPushToAllParents(parents, notifKey, { titleFn, bodyFn, title, body, data }) {
   const promises = [];
   for (const p of parents) {
     if (notifKey && p.notifSettings[notifKey] === false) continue;
     if (!p.token) continue;
-    promises.push(sendExpoPush({ token: p.token, title, body, data }));
+    const t = titleFn ? titleFn(p.lang || "ko") : title;
+    const b = bodyFn ? bodyFn(p.lang || "ko") : body;
+    promises.push(sendExpoPush({ token: p.token, title: t, body: b, data }));
   }
   return Promise.all(promises);
 }
@@ -96,10 +180,10 @@ exports.onSOSCreated = onDocumentCreated(
 
     const address = data.location?.address;
     await sendPushToAllParents(parents, "sos", {
-      title: "🚨 SOS 알림",
-      body: address
-        ? `${childName}이(가) 위험 신호를 보냈습니다! 위치: ${address}`
-        : `${childName}이(가) 위험 신호를 보냈습니다!`,
+      titleFn: (lang) => tr(lang, "sos.title"),
+      bodyFn: (lang) => address
+        ? tr(lang, "sos.bodyWithAddr", { name: childName, address })
+        : tr(lang, "sos.body", { name: childName }),
       data: { type: "sos", sosId, familyId },
     });
   }
@@ -119,12 +203,12 @@ exports.onGeofenceAlert = onDocumentCreated(
 
     const isEnter = data.type === "enter";
     await sendPushToAllParents(parents, "geofence", {
-      title: isEnter
-        ? `📍 ${data.geofenceName} 도착`
-        : `🚶 ${data.geofenceName} 이탈`,
-      body: isEnter
-        ? `${data.childName}이(가) ${data.geofenceName}에 도착했습니다.`
-        : `${data.childName}이(가) ${data.geofenceName}을(를) 벗어났습니다.`,
+      titleFn: (lang) => isEnter
+        ? tr(lang, "geo.enterTitle", { place: data.geofenceName })
+        : tr(lang, "geo.leaveTitle", { place: data.geofenceName }),
+      bodyFn: (lang) => isEnter
+        ? tr(lang, "geo.enterBody", { name: data.childName, place: data.geofenceName })
+        : tr(lang, "geo.leaveBody", { name: data.childName, place: data.geofenceName }),
       data: { type: "geofence", geofenceId: data.geofenceId, familyId },
     });
   }
@@ -154,8 +238,8 @@ exports.onLowBattery = onDocumentUpdated(
       await getParentTokensAndChildName(familyId, childUid);
 
     await sendPushToAllParents(parents, "battery", {
-      title: "🔋 저배터리 알림",
-      body: `${childName}의 배터리가 ${battery}%입니다. 충전이 필요해요.`,
+      titleFn: (lang) => tr(lang, "battery.title"),
+      bodyFn: (lang) => tr(lang, "battery.body", { name: childName, pct: battery }),
       data: { type: "lowBattery", familyId, childUid },
     });
   }
@@ -179,9 +263,11 @@ exports.onLoudSignal = onDocumentCreated(
     const childSnap = await db.doc(`users/${childUid}`).get();
     if (!childSnap.exists) return;
 
-    const childToken = childSnap.data().pushToken;
+    const childData = childSnap.data();
+    const childToken = childData.pushToken;
     if (!childToken) return;
 
+    const lang = childData.language || "ko";
     await fetch("https://exp.host/--/api/v2/push/send", {
       method: "POST",
       headers: {
@@ -192,8 +278,8 @@ exports.onLoudSignal = onDocumentCreated(
       body: JSON.stringify({
         to: childToken,
         sound: "default",
-        title: "📢 부모님이 연락을 원해요!",
-        body: data.message || "지금 바로 확인해주세요!",
+        title: tr(lang, "loud.title"),
+        body: data.message || tr(lang, "loud.body"),
         data: { type: "loudSignal", familyId },
         priority: "high",
         channelId: "loud-signal",
@@ -226,13 +312,15 @@ exports.onChatMessage = onDocumentCreated(
     for (const uid of recipients) {
       const userSnap = await db.doc(`users/${uid}`).get();
       if (!userSnap.exists) continue;
-      const token = userSnap.data().pushToken;
+      const userData = userSnap.data();
+      const token = userData.pushToken;
       if (!token) continue;
 
+      const lang = userData.language || "ko";
       await sendExpoPush({
         token,
-        title: `💬 ${data.senderName || '가족'}`,
-        body: data.text || '새 메시지가 있어요',
+        title: tr(lang, "chat.title", { name: data.senderName || tr(lang, "chat.defaultName") }),
+        body: data.text || tr(lang, "chat.body"),
         data: { type: "chat", familyId },
       });
     }
@@ -252,8 +340,8 @@ exports.onEmotionCheck = onDocumentCreated(
       await getParentTokensAndChildName(familyId, data.childUid);
 
     await sendPushToAllParents(parents, null, {
-      title: `${data.emoji} ${data.childName}의 기분`,
-      body: `오늘 기분: ${data.label}`,
+      titleFn: (lang) => tr(lang, "emotion.title", { emoji: data.emoji, name: data.childName }),
+      bodyFn: (lang) => tr(lang, "emotion.body", { label: data.emotionId ? tr(lang, `emotions.${data.emotionId}`) : data.label }),
       data: { type: "emotion", familyId },
     });
   }
@@ -269,8 +357,8 @@ exports.onTimeRequest = onDocumentCreated(
       await getParentTokensAndChildName(familyId, data.childUid);
 
     await sendPushToAllParents(parents, "timeRequest", {
-      title: "⏰ 추가 시간 요청",
-      body: `${data.childName}이(가) ${data.extraMinutes}분 추가를 요청했습니다.`,
+      titleFn: (lang) => tr(lang, "timeReq.title"),
+      bodyFn: (lang) => tr(lang, "timeReq.body", { name: data.childName, min: data.extraMinutes }),
       data: { type: "timeRequest", familyId },
     });
   }
