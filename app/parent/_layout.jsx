@@ -39,7 +39,6 @@ export default function ParentLayout() {
       <Tabs.Screen name="index" options={{title:t('tabs.home'), tabBarIcon:({focused}) => <TabIcon icon="🏠" focused={focused}/>}} />
       <Tabs.Screen name="location" options={{title:t('tabs.location'), tabBarIcon:({focused}) => <TabIcon icon="📍" focused={focused}/>}} />
       <Tabs.Screen name="screentime" options={{title:t('tabs.screentime'), tabBarIcon:({focused}) => <TabIcon icon="⏰" focused={focused}/>}} />
-      <Tabs.Screen name="reports" options={{title:t('tabs.reports'), tabBarIcon:({focused}) => <TabIcon icon="📊" focused={focused}/>}} />
       <Tabs.Screen name="chat" options={{title:t('tabs.chat'), tabBarIcon:({focused}) => <TabIcon icon="💬" focused={focused}/>}} />
       <Tabs.Screen name="settings" options={{title:t('tabs.settings'), tabBarIcon:({focused}) => <TabIcon icon="⚙️" focused={focused}/>}} />
     </Tabs>
