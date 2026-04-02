@@ -29,7 +29,8 @@
     "production": {
       "android": {
         "serviceAccountKeyPath": "/Users/seongnw/앱개발/safekids/google-service-account.json",
-        "track": "internal"
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     }
   }
