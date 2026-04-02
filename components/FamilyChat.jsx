@@ -42,20 +42,49 @@ export default function FamilyChat() {
   const [recordDuration, setRecordDuration] = useState(0);
   const [playingId, setPlayingId] = useState(null);
   const [senderName, setSenderName] = useState(user?.displayName || user?.email?.split('@')[0] || (role === 'parent' ? t('common.parent') : t('common.child')));
+  const [memberNames, setMemberNames] = useState({}); // uid → 최신 이름 맵
   const flatListRef = useRef(null);
   const soundRef = useRef(null);
   const recordTimerRef = useRef(null);
 
-  // childNames 맵에서 부모가 설정한 이름 가져오기
+  // 가족 멤버 이름 맵 로드 (childNames + 부모 이름)
   useEffect(() => {
     if (!familyId || !user) return;
     (async () => {
       try {
         const famDoc = await getDoc(doc(db, 'families', familyId));
-        if (famDoc.exists()) {
-          const customName = (famDoc.data().childNames || {})[user.uid];
-          if (customName) setSenderName(customName);
+        if (!famDoc.exists()) return;
+        const famData = famDoc.data();
+        const names = {};
+        // 자녀 이름: childNames 맵 우선
+        const childNames = famData.childNames || {};
+        for (const [uid, name] of Object.entries(childNames)) {
+          names[uid] = name;
         }
+        // 부모 이름
+        const parentIds = famData.parentIds || [];
+        for (const pid of parentIds) {
+          try {
+            const pDoc = await getDoc(doc(db, 'users', pid));
+            if (pDoc.exists()) {
+              names[pid] = pDoc.data().name || pDoc.data().email?.split('@')[0] || t('common.parent');
+            }
+          } catch {}
+        }
+        // 자녀 중 childNames에 없는 경우 users에서 가져오기
+        for (const cuid of (famData.children || [])) {
+          if (!names[cuid]) {
+            try {
+              const cDoc = await getDoc(doc(db, 'users', cuid));
+              if (cDoc.exists()) {
+                names[cuid] = cDoc.data().name || cDoc.data().email?.split('@')[0] || t('common.child');
+              }
+            } catch {}
+          }
+        }
+        setMemberNames(names);
+        // 내 이름 설정
+        if (names[user.uid]) setSenderName(names[user.uid]);
       } catch {}
     })();
   }, [familyId, user]);
@@ -256,6 +285,10 @@ export default function FamilyChat() {
     return `${m}:${String(s2).padStart(2, '0')}`;
   }
 
+  function getDisplayName(item) {
+    return memberNames[item.senderUid] || item.senderName || (item.senderRole === 'parent' ? t('common.parent') : t('common.child'));
+  }
+
   function renderMessage({ item }) {
     const isMe = item.senderUid === user?.uid;
 
@@ -268,7 +301,7 @@ export default function FamilyChat() {
             </View>
           )}
           <View style={s.msgContent}>
-            {!isMe && <Text style={s.msgSender}>{item.senderName}</Text>}
+            {!isMe && <Text style={s.msgSender}>{getDisplayName(item)}</Text>}
             <View style={s.stickerBubble}>
               <Text style={s.stickerEmoji}>{item.stickerEmoji}</Text>
               <Text style={s.stickerLabel}>{getStickerLabel(item.stickerId) || item.stickerLabel}</Text>
@@ -289,7 +322,7 @@ export default function FamilyChat() {
             </View>
           )}
           <View style={s.msgContent}>
-            {!isMe && <Text style={s.msgSender}>{item.senderName}</Text>}
+            {!isMe && <Text style={s.msgSender}>{getDisplayName(item)}</Text>}
             <TouchableOpacity
               style={[s.voiceBubble, isMe ? s.bubbleMe : s.bubbleOther]}
               onPress={() => handlePlayVoice(item)}
@@ -324,7 +357,7 @@ export default function FamilyChat() {
           </View>
         )}
         <View style={s.msgContent}>
-          {!isMe && <Text style={s.msgSender}>{item.senderName}</Text>}
+          {!isMe && <Text style={s.msgSender}>{getDisplayName(item)}</Text>}
           <View style={[s.msgBubble, isMe ? s.bubbleMe : s.bubbleOther]}>
             <Text style={[s.msgText, isMe && s.msgTextMe]}>{item.text}</Text>
           </View>

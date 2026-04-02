@@ -85,7 +85,12 @@ export default function ParentSettings() {
   async function handleSaveChildName(uid) {
     const name = editName.trim();
     if (!name) return;
-    await saveChildName(familyId, uid, name);
+    try {
+      await saveChildName(familyId, uid, name);
+    } catch (e) {
+      // users doc 업데이트 실패해도 families childNames는 성공했을 수 있으므로 계속 진행
+      console.warn('saveChildName partial fail:', e);
+    }
     setChildNames((prev) => ({ ...prev, [uid]: name }));
     setEditingChild(null);
     setEditName('');
