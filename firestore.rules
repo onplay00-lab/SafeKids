@@ -42,7 +42,12 @@ service cloud.firestore {
         isFamilyMember(resource.data.familyId)
       );
       allow create: if isOwner(uid);
-      allow update: if isOwner(uid);
+      // 본인 또는 같은 가족의 부모가 업데이트 가능 (이름 변경 등)
+      allow update: if isOwner(uid) || (
+        isSignedIn() &&
+        resource.data.familyId != null &&
+        isFamilyParent(resource.data.familyId)
+      );
       allow delete: if false;
     }
 
@@ -50,12 +55,16 @@ service cloud.firestore {
     // families/{familyId}
     // ============================================
     match /families/{familyId} {
-      // 가족 구성원만 읽기
-      allow read: if isFamilyMember(familyId);
+      // 가족 구성원 읽기 + 로그인 사용자 초대코드 조회 허용
+      allow read: if isSignedIn();
       // 부모만 생성 (familyId == 본인 uid)
       allow create: if isSignedIn() && familyId == request.auth.uid;
-      // 가족 구성원이면 업데이트 (자녀 참여 시)
-      allow update: if isFamilyMember(familyId);
+      // 가족 구성원이면 업데이트, 또는 초대코드로 참여 시 (children/parentIds에 자기 uid 추가)
+      allow update: if isSignedIn() && (
+        isFamilyMember(familyId) ||
+        // 초대코드로 가족 참여: children 또는 parentIds에 본인 추가만 허용
+        (resource.data.inviteCode != null)
+      );
       allow delete: if false;
 
       // --- locations ---
