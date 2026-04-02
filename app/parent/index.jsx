@@ -27,6 +27,7 @@ export default function ParentHome() {
   const [timeRequests, setTimeRequests] = useState([]);
   const [emotionMap, setEmotionMap] = useState({});
   const [childNamesMap, setChildNamesMap] = useState({});
+  const [selectedIdx, setSelectedIdx] = useState(0);
   const [showAllAlerts, setShowAllAlerts] = useState(false);
 
   function fmt(m) {
@@ -194,18 +195,11 @@ export default function ParentHome() {
     );
   }
 
+  const selectedChild = children[selectedIdx];
+
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       <Text style={s.title}>{t('parent.home.title')}</Text>
-
-      {/* 디버그: familyId 및 자녀 로딩 상태 */}
-      {__DEV__ && (
-        <View style={{ backgroundColor: '#FFF3E0', padding: 10, borderRadius: 8, marginBottom: 10 }}>
-          <Text style={{ fontSize: 11, color: '#E65100' }}>
-            familyId: {familyId || 'null'} | children: {children.length}
-          </Text>
-        </View>
-      )}
 
       {!familyId && (
         <View style={{ backgroundColor: '#FFF5F5', padding: 16, borderRadius: 12, marginBottom: 12 }}>
@@ -233,7 +227,27 @@ export default function ParentHome() {
         </View>
       ))}
 
-      {children.map((c) => {
+      {/* 자녀 선택 탭 */}
+      {children.length > 1 && (
+        <View style={s.childTabs}>
+          {children.map((c, i) => (
+            <TouchableOpacity
+              key={c.uid}
+              style={[s.childTab, i === selectedIdx && s.childTabActive]}
+              onPress={() => setSelectedIdx(i)}
+            >
+              <View style={[s.tabAvatar, { backgroundColor: c.color }]}>
+                <Text style={[s.tabAvatarText, { color: c.textColor }]}>{c.initials}</Text>
+              </View>
+              <Text style={[s.childTabText, i === selectedIdx && s.childTabTextActive]} numberOfLines={1}>{c.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* 선택된 자녀 카드 */}
+      {selectedChild && (() => {
+        const c = selectedChild;
         const sd = screenMap[c.uid];
         const loc = locationMap[c.uid];
         const presence = presenceMap[c.uid];
@@ -245,7 +259,7 @@ export default function ParentHome() {
         const isOnline = presence?.isOnline === true;
         const lastSeen = presence?.lastSeen?.toDate?.();
         return (
-          <TouchableOpacity key={c.uid} style={s.childCard}>
+          <View style={s.childCard}>
             <View style={s.avatarWrap}>
               <View style={[s.avatar, { backgroundColor: c.color }]}><Text style={[s.avatarText, { color: c.textColor }]}>{c.initials}</Text></View>
               <View style={[s.onlineDot, { backgroundColor: isOnline ? Colors.safe : Colors.border }]} />
@@ -279,30 +293,30 @@ export default function ParentHome() {
                 </Text>
               </View>
             </View>
-          </TouchableOpacity>
+          </View>
         );
-      })}
+      })()}
 
-      <View style={s.card}>
-        <Text style={s.cardLabel}>{t('parent.home.todayUsage')}</Text>
-        <View style={s.usageRow}>
-          {children.map((c) => {
-            const sd = screenMap[c.uid];
+      {/* 선택된 자녀의 오늘 사용 시간 */}
+      {selectedChild && (
+        <View style={s.card}>
+          <Text style={s.cardLabel}>{t('parent.home.todayUsage')}</Text>
+          {(() => {
+            const sd = screenMap[selectedChild.uid];
             const usedMin = sd?.dailyUsage || 0;
             const limitMin = sd?.dailyLimit || 240;
             const pct = limitMin > 0 ? Math.round((usedMin / limitMin) * 100) : 0;
             const warn = pct > 80;
             return (
-              <View key={c.uid} style={s.usageItem}>
-                <Text style={s.usageName}>{c.name}</Text>
+              <View>
                 <Text style={[s.usageTime, warn && { color: Colors.warn }]}>{fmt(usedMin)}</Text>
                 <View style={s.bar}><View style={[s.barFill, { width: `${Math.min(100, pct)}%`, backgroundColor: warn ? '#BA7517' : Colors.primary }]} /></View>
                 <Text style={s.usageLimit}>{t('parent.home.limit', { time: fmt(limitMin) })}</Text>
               </View>
             );
-          })}
+          })()}
         </View>
-      </View>
+      )}
 
       <View style={s.card}>
         <TouchableOpacity style={s.alertHeader} onPress={() => setShowAllAlerts(!showAllAlerts)}>
@@ -362,6 +376,13 @@ const s = StyleSheet.create({
   sosBannerText: { fontSize: 14, fontWeight: '600', color: Colors.danger },
   sosBannerBtn: { backgroundColor: Colors.danger, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginLeft: 10 },
   sosBannerBtnText: { fontSize: 12, fontWeight: '600', color: Colors.white },
+  childTabs: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  childTab: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, backgroundColor: Colors.bg, borderWidth: 1.5, borderColor: 'transparent' },
+  childTabActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  tabAvatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  tabAvatarText: { fontSize: 11, fontWeight: '600' },
+  childTabText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500', flex: 1 },
+  childTabTextActive: { color: Colors.primary, fontWeight: '600' },
   childCard: { flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: Colors.bg, borderRadius: 12, marginBottom: 8 },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   avatarText: { fontSize: 14, fontWeight: '600' },

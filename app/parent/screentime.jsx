@@ -115,7 +115,7 @@ export default function ParentScreenTime() {
   function handleWeeklyChange(day, delta) {
     const current = weeklyLimits || {};
     const val = current[day] !== undefined ? current[day] : dailyLimit;
-    const next = Math.max(30, Math.min(720, val + delta));
+    const next = Math.max(10, Math.min(720, val + delta));
     const updated = { ...current, [day]: next };
     // 모든 요일 채우기
     for (let i = 0; i < 7; i++) {
@@ -201,24 +201,24 @@ export default function ParentScreenTime() {
         <View style={s.limitSection}>
           <Text style={s.limitLabel}>{t('parent.screentime.dailyLimit')}</Text>
           <View style={s.limitRow}>
-            <TouchableOpacity
-              style={s.limitBtn}
-              onPress={() => {
-                const next = Math.max(30, dailyLimit - 30);
-                if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next);
-              }}
-            >
-              <Text style={s.limitBtnText}>-30{t('common.minutes')}</Text>
+            <TouchableOpacity style={s.limitBtn} onPress={() => { const next = Math.max(30, dailyLimit - 60); if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next); }}>
+              <Text style={s.limitBtnText}>-60</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.limitBtn} onPress={() => { const next = Math.max(30, dailyLimit - 30); if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next); }}>
+              <Text style={s.limitBtnText}>-30</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.limitBtnSm} onPress={() => { const next = Math.max(10, dailyLimit - 10); if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next); }}>
+              <Text style={s.limitBtnSmText}>-10</Text>
             </TouchableOpacity>
             <Text style={s.limitValue}>{fmt(dailyLimit)}</Text>
-            <TouchableOpacity
-              style={s.limitBtn}
-              onPress={() => {
-                const next = Math.min(720, dailyLimit + 30);
-                if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next);
-              }}
-            >
-              <Text style={s.limitBtnText}>+30{t('common.minutes')}</Text>
+            <TouchableOpacity style={s.limitBtnSm} onPress={() => { const next = Math.min(720, dailyLimit + 10); if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next); }}>
+              <Text style={s.limitBtnSmText}>+10</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.limitBtn} onPress={() => { const next = Math.min(720, dailyLimit + 30); if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next); }}>
+              <Text style={s.limitBtnText}>+30</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.limitBtn} onPress={() => { const next = Math.min(720, dailyLimit + 60); if (selectedChild) updateDailyLimit(familyId, selectedChild.uid, next); }}>
+              <Text style={s.limitBtnText}>+60</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -248,12 +248,24 @@ export default function ParentScreenTime() {
                 <View key={i} style={[s.weeklyRow, isToday && s.weeklyRowToday]}>
                   <Text style={[s.weeklyDay, isToday && s.weeklyDayToday]}>{t(`dayLabels.${i}`)}</Text>
                   <View style={s.weeklyControls}>
+                    <TouchableOpacity style={s.weeklyBtn} onPress={() => handleWeeklyChange(i, -60)}>
+                      <Text style={s.weeklyBtnText}>-60</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={s.weeklyBtn} onPress={() => handleWeeklyChange(i, -30)}>
                       <Text style={s.weeklyBtnText}>-30</Text>
                     </TouchableOpacity>
+                    <TouchableOpacity style={s.weeklyBtnSm} onPress={() => handleWeeklyChange(i, -10)}>
+                      <Text style={s.weeklyBtnSmText}>-10</Text>
+                    </TouchableOpacity>
                     <Text style={s.weeklyVal}>{fmt(val)}</Text>
+                    <TouchableOpacity style={s.weeklyBtnSm} onPress={() => handleWeeklyChange(i, 10)}>
+                      <Text style={s.weeklyBtnSmText}>+10</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={s.weeklyBtn} onPress={() => handleWeeklyChange(i, 30)}>
                       <Text style={s.weeklyBtnText}>+30</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={s.weeklyBtn} onPress={() => handleWeeklyChange(i, 60)}>
+                      <Text style={s.weeklyBtnText}>+60</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -598,10 +610,12 @@ const s = StyleSheet.create({
   // 일일 제한 설정
   limitSection:{ marginTop: 14, borderTopWidth: 0.5, borderTopColor: Colors.border, paddingTop: 12 },
   limitLabel:  { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
-  limitRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 },
-  limitBtn:    { backgroundColor: Colors.primaryLight, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 14 },
-  limitBtnText:{ fontSize: 14, fontWeight: '600', color: Colors.primary },
-  limitValue:  { fontSize: 18, fontWeight: '700', color: Colors.textPrimary, minWidth: 80, textAlign: 'center' },
+  limitRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  limitBtn:    { backgroundColor: Colors.primaryLight, borderRadius: 8, paddingVertical: 6, paddingHorizontal: 8 },
+  limitBtnText:{ fontSize: 12, fontWeight: '600', color: Colors.primary },
+  limitBtnSm:  { backgroundColor: '#F0F0F0', borderRadius: 6, paddingVertical: 6, paddingHorizontal: 6 },
+  limitBtnSmText:{ fontSize: 11, fontWeight: '500', color: Colors.textSecondary },
+  limitValue:  { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, minWidth: 70, textAlign: 'center' },
 
   // 요일별 제한
   weeklyToggle:    { fontSize: 13, color: Colors.primary, fontWeight: '500' },
@@ -609,10 +623,12 @@ const s = StyleSheet.create({
   weeklyRowToday:  { backgroundColor: Colors.primaryLight, borderRadius: 8, paddingHorizontal: 8, marginHorizontal: -8 },
   weeklyDay:       { fontSize: 14, fontWeight: '500', color: Colors.textPrimary, width: 28 },
   weeklyDayToday:  { color: Colors.primary, fontWeight: '700' },
-  weeklyControls:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  weeklyBtn:       { backgroundColor: Colors.primaryLight, borderRadius: 6, paddingVertical: 4, paddingHorizontal: 10 },
-  weeklyBtnText:   { fontSize: 12, fontWeight: '600', color: Colors.primary },
-  weeklyVal:       { fontSize: 14, fontWeight: '600', color: Colors.textPrimary, minWidth: 50, textAlign: 'center' },
+  weeklyControls:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  weeklyBtn:       { backgroundColor: Colors.primaryLight, borderRadius: 6, paddingVertical: 3, paddingHorizontal: 6 },
+  weeklyBtnText:   { fontSize: 11, fontWeight: '600', color: Colors.primary },
+  weeklyBtnSm:     { backgroundColor: '#F0F0F0', borderRadius: 5, paddingVertical: 3, paddingHorizontal: 5 },
+  weeklyBtnSmText: { fontSize: 10, fontWeight: '500', color: Colors.textSecondary },
+  weeklyVal:       { fontSize: 13, fontWeight: '600', color: Colors.textPrimary, minWidth: 46, textAlign: 'center' },
   weeklyDisableBtn:{ marginTop: 10, alignItems: 'center', paddingVertical: 8 },
   weeklyDisableText:{ fontSize: 12, color: Colors.textHint },
 
