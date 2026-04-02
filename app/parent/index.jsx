@@ -183,8 +183,17 @@ export default function ParentHome() {
   const selectedChild = children[selectedIdx];
   useEffect(() => {
     if (!familyId || !selectedChild) return;
-    const unsub1 = subscribeLatestSoundRequest(familyId, selectedChild.uid, setSoundRequest);
-    const unsub2 = subscribeBehaviorAlerts(familyId, selectedChild.uid, setBehaviorAlerts);
+    let unsub1 = () => {}, unsub2 = () => {};
+    try {
+      unsub1 = subscribeLatestSoundRequest(familyId, selectedChild.uid, (data) => {
+        try { setSoundRequest(data); } catch {}
+      });
+    } catch (e) { console.error('[SoundAround 구독 실패]', e); }
+    try {
+      unsub2 = subscribeBehaviorAlerts(familyId, selectedChild.uid, (data) => {
+        try { setBehaviorAlerts(data); } catch {}
+      });
+    } catch (e) { console.error('[행동분석 구독 실패]', e); }
     return () => { unsub1(); unsub2(); };
   }, [familyId, selectedChild?.uid]);
 

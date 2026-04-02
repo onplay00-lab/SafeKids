@@ -50,21 +50,29 @@ export default function ParentReports() {
   useEffect(() => {
     if (!familyId || !selectedChild) return;
     (async () => {
-      const [hist, emo] = await Promise.all([
-        fetchDailyHistory(familyId, selectedChild.uid, period),
-        fetchEmotionHistory(familyId, selectedChild.uid, period),
-      ]);
-      setHistory(hist);
-      setEmotions(emo);
-      setStats(computeStats(hist));
+      try {
+        const [hist, emo] = await Promise.all([
+          fetchDailyHistory(familyId, selectedChild.uid, period),
+          fetchEmotionHistory(familyId, selectedChild.uid, period),
+        ]);
+        setHistory(hist);
+        setEmotions(emo);
+        setStats(computeStats(hist));
+      } catch (e) {
+        console.error('[리포트 데이터 로드 실패]', e);
+      }
     })();
-  }, [familyId, selectedChild, period]);
+  }, [familyId, selectedChild?.uid, period]);
 
   // 행동 알림 구독
   useEffect(() => {
     if (!familyId || !selectedChild) return;
-    return subscribeBehaviorAlerts(familyId, selectedChild.uid, setAlerts);
-  }, [familyId, selectedChild]);
+    try {
+      return subscribeBehaviorAlerts(familyId, selectedChild.uid, setAlerts);
+    } catch (e) {
+      console.error('[행동알림 구독 실패]', e);
+    }
+  }, [familyId, selectedChild?.uid]);
 
   const maxUsage = history.length > 0 ? Math.max(...history.map(d => d.totalUsage || d.dailyUsage || 0), 60) : 240;
 

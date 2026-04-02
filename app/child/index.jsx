@@ -56,73 +56,72 @@ export default function ChildHome() {
   const warnedAt = useRef({ warn15: false, warn5: false, warnOver: false });
 
   // Sound Around: 부모의 녹음 요청 감지 → 자동 녹음
+  const soundRecordingRef = useRef(false);
   useEffect(() => {
     if (!user || !familyId) return;
-    const unsub = subscribePendingSoundRequest(familyId, user.uid, async (request) => {
-      if (!request || soundRecording) return;
-      try {
-        setSoundRecording(true);
-        setSoundCountdown(30);
+    let unsub = () => {};
+    try {
+      unsub = subscribePendingSoundRequest(familyId, user.uid, async (request) => {
+        if (!request || soundRecordingRef.current) return;
+        try {
+          soundRecordingRef.current = true;
+          setSoundRecording(true);
+          setSoundCountdown(30);
 
-        // 오디오 권한 요청
-        const { granted } = await Audio.requestPermissionsAsync();
-        if (!granted) {
-          await updateSoundRequest(familyId, request.id, { status: 'failed', reason: 'permission_denied' });
-          setSoundRecording(false);
-          setSoundCountdown(0);
-          return;
-        }
-
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-        });
-
-        const recording = new Audio.Recording();
-        await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-        await recording.startAsync();
-
-        // 카운트다운
-        const timer = setInterval(() => {
-          setSoundCountdown(prev => {
-            if (prev <= 1) { clearInterval(timer); return 0; }
-            return prev - 1;
-          });
-        }, 1000);
-
-        // 30초 후 녹음 중지
-        setTimeout(async () => {
-          clearInterval(timer);
-          try {
-            await recording.stopAndUnloadAsync();
-            const uri = recording.getURI();
-            if (uri) {
-              const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-              await updateSoundRequest(familyId, request.id, {
-                status: 'completed',
-                audioBase64: base64,
-                completedAt: new Date(),
-              });
-            } else {
-              await updateSoundRequest(familyId, request.id, { status: 'failed', reason: 'no_uri' });
-            }
-          } catch (e) {
-            console.error('녹음 완료 처리 실패:', e);
-            await updateSoundRequest(familyId, request.id, { status: 'failed', reason: e.message });
-          } finally {
+          const { granted } = await Audio.requestPermissionsAsync();
+          if (!granted) {
+            await updateSoundRequest(familyId, request.id, { status: 'failed', reason: 'permission_denied' });
+            soundRecordingRef.current = false;
             setSoundRecording(false);
             setSoundCountdown(0);
+            return;
           }
-        }, 30000);
-      } catch (e) {
-        console.error('녹음 시작 실패:', e);
-        await updateSoundRequest(familyId, request.id, { status: 'failed', reason: e.message });
-        setSoundRecording(false);
-        setSoundCountdown(0);
-      }
-    });
+
+          await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+          const recording = new Audio.Recording();
+          await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+          await recording.startAsync();
+
+          const timer = setInterval(() => {
+            setSoundCountdown(prev => {
+              if (prev <= 1) { clearInterval(timer); return 0; }
+              return prev - 1;
+            });
+          }, 1000);
+
+          setTimeout(async () => {
+            clearInterval(timer);
+            try {
+              await recording.stopAndUnloadAsync();
+              const uri = recording.getURI();
+              if (uri) {
+                const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+                await updateSoundRequest(familyId, request.id, { status: 'completed', audioBase64: base64, completedAt: new Date() });
+              } else {
+                await updateSoundRequest(familyId, request.id, { status: 'failed', reason: 'no_uri' });
+              }
+            } catch (e) {
+              console.error('녹음 완료 처리 실패:', e);
+              try { await updateSoundRequest(familyId, request.id, { status: 'failed', reason: e.message }); } catch {}
+            } finally {
+              soundRecordingRef.current = false;
+              setSoundRecording(false);
+              setSoundCountdown(0);
+            }
+          }, 30000);
+        } catch (e) {
+          console.error('녹음 시작 실패:', e);
+          try { await updateSoundRequest(familyId, request.id, { status: 'failed', reason: e.message }); } catch {}
+          soundRecordingRef.current = false;
+          setSoundRecording(false);
+          setSoundCountdown(0);
+        }
+      });
+    } catch (e) {
+      console.error('[SoundAround] 구독 실패:', e);
+    }
     return () => unsub();
-  }, [user, familyId, soundRecording]);
+  }, [user, familyId]);
 
   // 감정 체크인 구독
   useEffect(() => {
