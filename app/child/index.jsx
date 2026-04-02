@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Platform, Modal, TextInput, KeyboardAvoidingView, AppState,
 } from 'react-native';
-import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp, doc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, orderBy, serverTimestamp, doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../../constants/firebase';
 import * as Notifications from 'expo-notifications';
 import { useTranslation } from 'react-i18next';
