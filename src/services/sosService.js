@@ -74,15 +74,15 @@ export function subscribeSOS(familyId, callback) {
     limit(20)
   );
 
-  // childNames 맵을 한 번만 조회 (SOS 알림마다 개별 users 문서 읽기 방지)
-  let childNamesMap = {};
-  try {
-    const famDoc = await getDoc(doc(db, 'families', familyId));
-    if (famDoc.exists()) childNamesMap = famDoc.data().childNames || {};
-  } catch {}
-
   return onSnapshot(q, async (snapshot) => {
     try {
+      // childNames 맵 조회
+      let childNamesMap = {};
+      try {
+        const famDoc = await getDoc(doc(db, 'families', familyId));
+        if (famDoc.exists()) childNamesMap = famDoc.data().childNames || {};
+      } catch {}
+
       const alerts = await Promise.all(
         snapshot.docs.map(async (d) => {
           const data = d.data();
