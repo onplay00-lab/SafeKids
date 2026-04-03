@@ -1,0 +1,37 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "emotionChecks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "childUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "soundRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "childUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "behaviorAlerts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "childUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "soundRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "childUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ]
+}

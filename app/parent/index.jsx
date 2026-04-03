@@ -8,6 +8,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { subscribeScreentime } from '../../src/services/screentimeService';
 import { subscribeSOS, resolveSOS } from '../../src/services/sosService';
 import { subscribeLatestEmotion } from '../../src/services/emotionService';
+import { requestSoundAround, subscribeLatestSoundRequest } from '../../src/services/soundAroundService';
+import { subscribeBehaviorAlerts, ALERT_ICONS, SEVERITY_COLORS, markAlertRead } from '../../src/services/behaviorAnalysisService';
+import { Audio } from 'expo-av';
 
 const CHILD_COLORS = [
   { color: Colors.primaryLight, textColor: Colors.primary },
@@ -29,6 +32,9 @@ export default function ParentHome() {
   const [childNamesMap, setChildNamesMap] = useState({});
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const [soundRequest, setSoundRequest] = useState(null);
+  const [playingSound, setPlayingSound] = useState(null);
+  const [behaviorAlerts, setBehaviorAlerts] = useState([]);
 
   function fmt(m) {
     const h = Math.floor(m / 60);
@@ -173,6 +179,41 @@ export default function ParentHome() {
     return unsub;
   }, [familyId]);
 
+  // 선택된 자녀의 Sound Around + 행동 알림 구독
+  const selectedChildUid = children[selectedIdx]?.uid;
+  useEffect(() => {
+    if (!familyId || !selectedChildUid) return;
+    const unsub1 = subscribeLatestSoundRequest(familyId, selectedChildUid, setSoundRequest);
+    const unsub2 = subscribeBehaviorAlerts(familyId, selectedChildUid, setBehaviorAlerts);
+    return () => { unsub1(); unsub2(); };
+  }, [familyId, selectedChildUid]);
+
+  async function handleSoundAround(child) {
+    Alert.alert(
+      t('parent.home.soundAroundTitle'),
+      t('parent.home.soundAroundMessage', { name: child.name }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('parent.home.soundAroundRequest'), onPress: async () => {
+          try {
+            await requestSoundAround(familyId, child.uid, 30);
+            Alert.alert(t('parent.home.soundAroundRequested'));
+          } catch (e) { Alert.alert(t('common.error')); }
+        }},
+      ]
+    );
+  }
+
+  async function handlePlaySoundAround(base64) {
+    try {
+      if (playingSound) { await playingSound.unloadAsync(); setPlayingSound(null); return; }
+      const { sound } = await Audio.Sound.createAsync({ uri: `data:audio/m4a;base64,${base64}` });
+      setPlayingSound(sound);
+      sound.setOnPlaybackStatusUpdate(status => { if (status.didJustFinish) { sound.unloadAsync(); setPlayingSound(null); } });
+      await sound.playAsync();
+    } catch (e) { console.error('재생 오류:', e); }
+  }
+
   async function handleLoudSignal(child) {
     Alert.alert(
       t('parent.home.loudSignalTitle'),
@@ -284,9 +325,14 @@ export default function ParentHome() {
               </View>
             </View>
             <View style={s.cardActions}>
-              <TouchableOpacity style={s.loudBtn} onPress={() => handleLoudSignal(c)}>
-                <Text style={s.loudBtnText}>📢</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 4 }}>
+                <TouchableOpacity style={s.loudBtn} onPress={() => handleLoudSignal(c)}>
+                  <Text style={s.loudBtnText}>📢</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[s.loudBtn, { backgroundColor: '#E8F5E9' }]} onPress={() => handleSoundAround(c)}>
+                  <Text style={s.loudBtnText}>🎧</Text>
+                </TouchableOpacity>
+              </View>
               <View style={[s.badge, { backgroundColor: hasSOS ? Colors.dangerBg : lowBattery ? '#FFF3E0' : Colors.safeBg }]}>
                 <Text style={[s.badgeText, { color: hasSOS ? Colors.danger : lowBattery ? '#E65100' : Colors.safe }]}>
                   {hasSOS ? 'SOS!' : lowBattery ? t('common.lowBattery') : t('common.safe')}
@@ -364,13 +410,47 @@ export default function ParentHome() {
           });
         })()}
       </View>
+
+      {/* Sound Around 상태 */}
+      {soundRequest && (
+        <View style={s.card}>
+          <Text style={s.cardLabel}>{t('parent.home.soundAround')}</Text>
+          {soundRequest.status === 'pending' && <Text style={s.notiText}>{t('parent.home.soundAroundPending')}</Text>}
+          {soundRequest.status === 'recording' && <Text style={s.notiText}>🔴 {t('parent.home.soundAroundRecording')}</Text>}
+          {soundRequest.status === 'completed' && soundRequest.audioBase64 && (
+            <TouchableOpacity style={s.playBtn} onPress={() => handlePlaySoundAround(soundRequest.audioBase64)}>
+              <Text style={s.playBtnText}>{playingSound ? '⏹ ' + t('parent.home.soundAroundStop') : '▶️ ' + t('parent.home.soundAroundPlay')}</Text>
+            </TouchableOpacity>
+          )}
+          {soundRequest.status === 'failed' && <Text style={[s.notiText, { color: Colors.danger }]}>{t('parent.home.soundAroundFailed')}</Text>}
+        </View>
+      )}
+
+      {/* 행동 분석 알림 */}
+      {behaviorAlerts.length > 0 && (
+        <View style={s.card}>
+          <Text style={s.cardLabel}>{t('parent.home.behaviorAlerts')}</Text>
+          {behaviorAlerts.filter(a => !a.read).slice(0, 3).map(a => {
+            const sc = SEVERITY_COLORS[a.severity] || SEVERITY_COLORS.info;
+            return (
+              <TouchableOpacity key={a.id} style={[s.behaviorRow, { backgroundColor: sc.bg }]} onPress={() => markAlertRead(familyId, a.id)}>
+                <Text style={s.behaviorIcon}>{ALERT_ICONS[a.type] || '📋'}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.behaviorTitle, { color: sc.text }]}>{a.title}</Text>
+                  <Text style={s.behaviorDesc}>{a.description}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </ScrollView>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-  content: { padding: 20, paddingTop: 60 },
+  content: { padding: 20, paddingTop: 60, paddingBottom: 30 },
   title: { fontSize: 22, fontWeight: '700', color: Colors.textPrimary, marginBottom: 20 },
   sosBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.dangerBg, borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#F09595' },
   sosBannerText: { fontSize: 14, fontWeight: '600', color: Colors.danger },
@@ -423,4 +503,10 @@ const s = StyleSheet.create({
   alertRowPending: { backgroundColor: '#FFF5F5', borderRadius: 8, paddingHorizontal: 8, marginHorizontal: -8 },
   resolveBtn: { backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 },
   resolveBtnText: { fontSize: 12, fontWeight: '600', color: Colors.white },
+  playBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 10, alignItems: 'center', marginTop: 8 },
+  playBtnText: { fontSize: 14, fontWeight: '600', color: Colors.white },
+  behaviorRow: { flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 10, marginBottom: 6 },
+  behaviorIcon: { fontSize: 20, marginRight: 10 },
+  behaviorTitle: { fontSize: 13, fontWeight: '600' },
+  behaviorDesc: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
 });

@@ -46,16 +46,37 @@ export default function FamilyChat() {
   const soundRef = useRef(null);
   const recordTimerRef = useRef(null);
 
-  // childNames 맵에서 부모가 설정한 이름 가져오기
+  const [memberNames, setMemberNames] = useState({});
+
+  // 가족 전체 멤버 이름 맵 로드 (채팅 표시용)
   useEffect(() => {
     if (!familyId || !user) return;
     (async () => {
       try {
         const famDoc = await getDoc(doc(db, 'families', familyId));
-        if (famDoc.exists()) {
-          const customName = (famDoc.data().childNames || {})[user.uid];
-          if (customName) setSenderName(customName);
-        }
+        if (!famDoc.exists()) return;
+        const data = famDoc.data();
+        const childNames = data.childNames || {};
+        const names = { ...childNames };
+        // 부모 이름도 가져오기
+        const parentIds = data.parentIds || (data.parentId ? [data.parentId] : []);
+        await Promise.all(parentIds.map(async (uid) => {
+          if (!names[uid]) {
+            const userDoc = await getDoc(doc(db, 'users', uid));
+            if (userDoc.exists()) names[uid] = userDoc.data().name || userDoc.data().email?.split('@')[0] || t('common.parent');
+          }
+        }));
+        // 자녀 이름도 fallback
+        const childUids = data.children || [];
+        await Promise.all(childUids.map(async (uid) => {
+          if (!names[uid]) {
+            const userDoc = await getDoc(doc(db, 'users', uid));
+            if (userDoc.exists()) names[uid] = userDoc.data().name || userDoc.data().email?.split('@')[0] || t('common.child');
+          }
+        }));
+        setMemberNames(names);
+        // 내 이름도 업데이트
+        if (names[user.uid]) setSenderName(names[user.uid]);
       } catch {}
     })();
   }, [familyId, user]);
@@ -268,7 +289,7 @@ export default function FamilyChat() {
             </View>
           )}
           <View style={s.msgContent}>
-            {!isMe && <Text style={s.msgSender}>{item.senderName}</Text>}
+            {!isMe && <Text style={s.msgSender}>{memberNames[item.senderUid] || item.senderName}</Text>}
             <View style={s.stickerBubble}>
               <Text style={s.stickerEmoji}>{item.stickerEmoji}</Text>
               <Text style={s.stickerLabel}>{getStickerLabel(item.stickerId) || item.stickerLabel}</Text>
@@ -289,7 +310,7 @@ export default function FamilyChat() {
             </View>
           )}
           <View style={s.msgContent}>
-            {!isMe && <Text style={s.msgSender}>{item.senderName}</Text>}
+            {!isMe && <Text style={s.msgSender}>{memberNames[item.senderUid] || item.senderName}</Text>}
             <TouchableOpacity
               style={[s.voiceBubble, isMe ? s.bubbleMe : s.bubbleOther]}
               onPress={() => handlePlayVoice(item)}
@@ -324,7 +345,7 @@ export default function FamilyChat() {
           </View>
         )}
         <View style={s.msgContent}>
-          {!isMe && <Text style={s.msgSender}>{item.senderName}</Text>}
+          {!isMe && <Text style={s.msgSender}>{memberNames[item.senderUid] || item.senderName}</Text>}
           <View style={[s.msgBubble, isMe ? s.bubbleMe : s.bubbleOther]}>
             <Text style={[s.msgText, isMe && s.msgTextMe]}>{item.text}</Text>
           </View>

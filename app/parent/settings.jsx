@@ -237,9 +237,12 @@ export default function ParentSettings() {
           <Text style={s.codeHint}>{t('parent.settings.codeHint')}</Text>
         </View>
       ) : (
-        <TouchableOpacity style={s.addBtn} onPress={handleShowInviteCode} disabled={loading}>
-          {loading ? <ActivityIndicator color={Colors.primary} /> : <Text style={s.addBtnText}>{t('parent.settings.addChild')}</Text>}
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity style={s.addBtn} onPress={handleShowInviteCode} disabled={loading}>
+            {loading ? <ActivityIndicator color={Colors.primary} /> : <Text style={s.addBtnText}>{t('parent.settings.addChildOrParent')}</Text>}
+          </TouchableOpacity>
+          <Text style={s.parentAddHint}>{t('parent.settings.codeHintParent')}</Text>
+        </>
       )}
 
       {/* 부모 목록 */}
@@ -462,6 +465,7 @@ const s = StyleSheet.create({
   section:          { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginBottom: 10 },
   addBtn:           { alignItems: 'center', paddingVertical: 14, borderWidth: 1, borderColor: Colors.primaryMid, borderRadius: 10, backgroundColor: Colors.primaryLight },
   addBtnText:       { fontSize: 14, fontWeight: '500', color: Colors.primary },
+  parentAddHint:    { fontSize: 12, color: Colors.textHint, textAlign: 'center', marginTop: 8, lineHeight: 18 },
   codeBox:          { alignItems: 'center', backgroundColor: Colors.primaryLight, borderRadius: 14, padding: 24 },
   codeLabel:        { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
   codeText:         { fontSize: 36, fontWeight: '700', color: Colors.primary, letterSpacing: 6, marginBottom: 8 },
