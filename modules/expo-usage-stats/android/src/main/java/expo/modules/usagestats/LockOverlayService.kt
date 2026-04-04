@@ -6,13 +6,18 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class LockOverlayService : Service() {
 
@@ -28,6 +33,9 @@ class LockOverlayService : Service() {
 
     private var overlayView: LinearLayout? = null
     private var windowManager: WindowManager? = null
+    private var midnightHandler: Handler? = null
+    private var midnightRunnable: Runnable? = null
+    private var lockDate: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -42,11 +50,47 @@ class LockOverlayService : Service() {
         startForeground(NOTIFICATION_ID, notification)
 
         when (intent?.action) {
-            ACTION_SHOW -> showOverlay(intent.getStringExtra(EXTRA_MESSAGE) ?: "사용 시간이 끝났어요")
-            ACTION_HIDE -> hideOverlay()
+            ACTION_SHOW -> {
+                // 잠금 날짜 기록 및 자정 체크 시작
+                val prefs = getSharedPreferences("safekids_lock", Context.MODE_PRIVATE)
+                lockDate = prefs.getString("lockDate", null)
+                    ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                showOverlay(intent.getStringExtra(EXTRA_MESSAGE) ?: "사용 시간이 끝났어요")
+                startMidnightCheck()
+            }
+            ACTION_HIDE -> {
+                stopMidnightCheck()
+                hideOverlay()
+            }
         }
 
         return START_STICKY
+    }
+
+    /** 30초마다 날짜가 바뀌었는지 체크 → 바뀌면 자동 해제 */
+    private fun startMidnightCheck() {
+        stopMidnightCheck()
+        midnightHandler = Handler(Looper.getMainLooper())
+        midnightRunnable = object : Runnable {
+            override fun run() {
+                val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                if (lockDate != null && lockDate != today) {
+                    // 자정이 지남 → 잠금 해제
+                    val prefs = getSharedPreferences("safekids_lock", Context.MODE_PRIVATE)
+                    prefs.edit().putBoolean("locked", false).remove("lockDate").apply()
+                    hideOverlay()
+                    return
+                }
+                midnightHandler?.postDelayed(this, 30_000L)
+            }
+        }
+        midnightHandler?.postDelayed(midnightRunnable!!, 30_000L)
+    }
+
+    private fun stopMidnightCheck() {
+        midnightRunnable?.let { midnightHandler?.removeCallbacks(it) }
+        midnightHandler = null
+        midnightRunnable = null
     }
 
     private fun showOverlay(message: String) {
@@ -151,6 +195,7 @@ class LockOverlayService : Service() {
     }
 
     override fun onDestroy() {
+        stopMidnightCheck()
         hideOverlay()
         super.onDestroy()
     }

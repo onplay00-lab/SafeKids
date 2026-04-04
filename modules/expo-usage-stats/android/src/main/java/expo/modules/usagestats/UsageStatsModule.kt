@@ -107,7 +107,8 @@ class UsageStatsModule : Module() {
             val context = appContext.reactContext ?: return@AsyncFunction null
             // 잠금 상태 저장 (부팅 후 복원용)
             val prefs = context.getSharedPreferences("safekids_lock", Context.MODE_PRIVATE)
-            prefs.edit().putBoolean("locked", true).putString("message", message).apply()
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            prefs.edit().putBoolean("locked", true).putString("message", message).putString("lockDate", today).apply()
 
             val intent = Intent(context, LockOverlayService::class.java).apply {
                 action = LockOverlayService.ACTION_SHOW

@@ -7,11 +7,17 @@ import android.content.Intent
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            // 부팅 후 앱이 필요 시 잠금 서비스를 다시 시작할 수 있도록
-            // SharedPreferences에서 잠금 상태를 확인
             val prefs = context.getSharedPreferences("safekids_lock", Context.MODE_PRIVATE)
             val shouldLock = prefs.getBoolean("locked", false)
             if (shouldLock) {
+                // 잠금 날짜가 오늘이 아니면 잠금 해제 (자정 지남)
+                val lockDate = prefs.getString("lockDate", null)
+                val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+                if (lockDate != null && lockDate != today) {
+                    prefs.edit().putBoolean("locked", false).remove("lockDate").apply()
+                    return
+                }
+
                 val serviceIntent = Intent(context, LockOverlayService::class.java).apply {
                     action = LockOverlayService.ACTION_SHOW
                     putExtra(LockOverlayService.EXTRA_MESSAGE, prefs.getString("message", "사용 시간이 끝났어요"))
