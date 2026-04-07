@@ -53,8 +53,9 @@ class LockOverlayService : Service() {
             ACTION_SHOW -> {
                 // 잠금 날짜 기록 및 자정 체크 시작
                 val prefs = getSharedPreferences("safekids_lock", Context.MODE_PRIVATE)
-                lockDate = prefs.getString("lockDate", null)
-                    ?: SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                lockDate = today
+                prefs.edit().putString("lockDate", today).putBoolean("locked", true).apply()
                 showOverlay(intent.getStringExtra(EXTRA_MESSAGE) ?: "사용 시간이 끝났어요")
                 startMidnightCheck()
             }

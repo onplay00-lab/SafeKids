@@ -41,6 +41,9 @@ let isAppActive = true;
 let flushInterval = null;
 let appStateSub = null;
 let usingNative = false; // 네이티브 모듈 사용 여부
+let cachedFamilyId = null; // familyId 캐시 (매번 Firestore 읽기 방지)
+let lastSyncDate = null; // 마지막 동기화 날짜 캐시
+let cachedApps = null; // 앱 데이터 캐시 (매번 getDoc 방지)
 
 // ============================================
 // 날짜 문자열 (YYYY-MM-DD)
@@ -57,10 +60,13 @@ function startOfTodayMs() {
 }
 
 async function getFamilyId() {
+  if (cachedFamilyId) return cachedFamilyId;
   const user = auth.currentUser;
   if (!user) return null;
   const snap = await getDoc(doc(db, 'users', user.uid));
-  return snap.exists() ? (snap.data().familyId || null) : null;
+  const fid = snap.exists() ? (snap.data().familyId || null) : null;
+  if (fid) cachedFamilyId = fid;
+  return fid;
 }
 
 function getRef(familyId, childUid) {
@@ -143,13 +149,25 @@ async function syncFromNative() {
   if (!familyId) return;
 
   const ref = getRef(familyId, user.uid);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return;
+  const today = todayStr();
 
-  const data = snap.data();
-  if (data.date !== todayStr()) {
-    await initScreentime();
-    return;
+  // 날짜가 바뀌었거나 캐시가 없으면 Firestore에서 읽기
+  if (lastSyncDate !== today || !cachedApps) {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const data = snap.data();
+    if (data.date !== today) {
+      await initScreentime();
+      lastSyncDate = today;
+      cachedApps = null;
+      // initScreentime 후 새 데이터 다시 읽기 (return하지 않고 계속 진행)
+      const freshSnap = await getDoc(ref);
+      if (!freshSnap.exists()) return;
+      cachedApps = freshSnap.data().apps || {};
+    } else {
+      cachedApps = data.apps || {};
+    }
+    lastSyncDate = today;
   }
 
   // 오늘 00:00 ~ 지금 사이의 모든 앱 사용량 조회
@@ -179,7 +197,7 @@ async function syncFromNative() {
   }
 
   // 앱별 데이터 업데이트
-  const apps = { ...(data.apps || {}) };
+  const apps = { ...cachedApps };
   for (const [key] of Object.entries(DEFAULT_APPS)) {
     const sec = appSeconds[key] || 0;
     apps[key] = {
@@ -211,6 +229,8 @@ async function syncFromNative() {
       lastActiveAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     }, { merge: true });
+    // 캐시 업데이트
+    cachedApps = apps;
   } catch (e) {
     console.error('screentimeService: syncFromNative 실패', e);
   }
@@ -272,6 +292,12 @@ export async function startUsageTracking() {
         flushInterval = setInterval(() => {
           syncFromNative().catch(console.error);
         }, 60000);
+        // 앱이 포그라운드로 돌아올 때 즉시 동기화
+        appStateSub = AppState.addEventListener('change', (nextState) => {
+          if (nextState === 'active') {
+            syncFromNative().catch(console.error);
+          }
+        });
         console.log('[Screentime] 네이티브 UsageStats 모드');
         return 'native';
       }
@@ -322,6 +348,9 @@ export async function stopUsageTracking() {
     appStateSub = null;
   }
   foregroundStartTime = null;
+  cachedFamilyId = null;
+  lastSyncDate = null;
+  cachedApps = null;
 }
 
 // ============================================

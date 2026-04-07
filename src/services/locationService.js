@@ -10,6 +10,11 @@ const LOCATION_TASK = 'background-location-task';
 // Expo Go 여부 판별
 const isExpoGo = Constants.appOwnership === 'expo';
 
+// familyId 캐시
+let cachedFamilyId = null;
+// 배터리 독립 업데이트 인터벌
+let batteryInterval = null;
+
 // ============================================
 // 1) 백그라운드 위치 태스크 (Development Build 전용)
 // ============================================
@@ -37,14 +42,22 @@ if (!isExpoGo) {
 // ============================================
 // 2) Firestore에 위치 저장하는 함수
 // ============================================
+async function getFamilyId() {
+  if (cachedFamilyId) return cachedFamilyId;
+  const user = auth.currentUser;
+  if (!user) return null;
+  const userDoc = await getDoc(doc(db, 'users', user.uid));
+  if (!userDoc.exists()) return null;
+  const fid = userDoc.data().familyId || null;
+  if (fid) cachedFamilyId = fid;
+  return fid;
+}
+
 async function saveLocation(location) {
   const user = auth.currentUser;
   if (!user) return;
 
-  const userDoc = await getDoc(doc(db, 'users', user.uid));
-  if (!userDoc.exists()) return;
-
-  const familyId = userDoc.data().familyId;
+  const familyId = await getFamilyId();
   if (!familyId) return;
 
   // 배터리 정보 가져오기
@@ -85,6 +98,48 @@ async function saveLocation(location) {
     await checkGeofences(familyId, user.uid, location.coords.latitude, location.coords.longitude);
   } catch (e) {
     console.error('Geofence check failed:', e);
+  }
+}
+
+// ============================================
+// 2-1) 배터리 독립 업데이트 (위치와 별도로 주기적 실행)
+// ============================================
+async function syncBattery() {
+  const user = auth.currentUser;
+  if (!user) return;
+  const familyId = await getFamilyId();
+  if (!familyId) return;
+
+  try {
+    const battery = await getBatteryLevel();
+    const charging = await isCharging();
+    if (battery < 0) return; // 배터리 정보 없음
+
+    const locationRef = doc(db, 'families', familyId, 'locations', user.uid);
+    await setDoc(locationRef, {
+      battery,
+      charging,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (e) {
+    console.log('배터리 동기화 실패:', e);
+  }
+}
+
+export function startBatterySync() {
+  if (batteryInterval) return;
+  // 즉시 한 번 + 2분마다 배터리 동기화
+  syncBattery().catch(console.error);
+  batteryInterval = setInterval(() => {
+    syncBattery().catch(console.error);
+  }, 120000);
+  console.log('[Battery] 독립 배터리 동기화 시작');
+}
+
+export function stopBatterySync() {
+  if (batteryInterval) {
+    clearInterval(batteryInterval);
+    batteryInterval = null;
   }
 }
 
