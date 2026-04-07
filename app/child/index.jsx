@@ -9,7 +9,7 @@ import * as Notifications from 'expo-notifications';
 import { useTranslation } from 'react-i18next';
 import { Colors } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
-import { startLocationTracking } from '../../src/services/locationService';
+import { startLocationTracking, startBatterySync, stopBatterySync } from '../../src/services/locationService';
 import {
   initScreentime, startUsageTracking, stopUsageTracking,
   subscribeMyScreentime, checkUsagePermission, requestUsagePermission,
@@ -54,6 +54,8 @@ export default function ChildHome() {
   const soundRecordingRef = useRef(false);
   const prevRemaining = useRef(null);
   const warnedAt = useRef({ warn15: false, warn5: false, warnOver: false });
+  // 백그라운드 진입 시 네이티브 오버레이를 표시할지 판단하기 위한 최신 사용량 캐시
+  const latestUsageRef = useRef({ usage: 0, limit: 240 });
 
   // Sound Around: 부모의 녹음 요청 감지 → 자동 녹음
   useEffect(() => {
@@ -220,6 +222,9 @@ export default function ChildHome() {
   // 시간 초과 시 오버레이 잠금 표시 / 해제 + 경고 알림
   useEffect(() => {
     if (screenData === null) return;
+    // 어제 데이터가 남아있으면 무시 (initScreentime이 리셋 중)
+    const today = new Date().toISOString().split('T')[0];
+    if (screenData.date && screenData.date !== today) return;
     const usage = screenData?.dailyUsage || 0;
     const limit = screenData?.dailyLimit || 240;
     const rem = Math.max(0, limit - usage);
@@ -248,6 +253,9 @@ export default function ChildHome() {
       sendWarning(t('child.home.warnNotif5Title'), t('child.home.warnNotif5Body', { n: rem }));
     }
 
+    // AppState 핸들러에서 사용할 최신 사용량 캐시
+    latestUsageRef.current = { usage, limit };
+
     if (Platform.OS !== 'android') { prevRemaining.current = rem; return; }
 
     async function updateOverlay() {
@@ -255,7 +263,11 @@ export default function ChildHome() {
         const hasOverlay = await ExpoUsageStats.checkOverlayPermission();
         if (!hasOverlay) return;
 
-        if (rem <= 0) {
+        // 앱이 포그라운드일 때는 RN 모달이 잠금화면을 표시하므로
+        // 네이티브 시스템 오버레이는 숨긴다 (이중 잠금화면 방지)
+        const inForeground = AppState.currentState === 'active';
+
+        if (rem <= 0 && !inForeground) {
           if (!warnedAt.current.warnOver) {
             warnedAt.current.warnOver = true;
             sendWarning(t('child.home.lockNotifTitle'), t('child.home.lockNotifBody'));
@@ -264,7 +276,11 @@ export default function ChildHome() {
             t('child.home.timeOverOverlay', { limit: fmt(limit) })
           );
         } else {
-          // 시간이 남아있으면 (추가 시간 승인 등) 오버레이 해제
+          // 시간이 남아있거나 앱이 포그라운드 → 네이티브 오버레이 해제
+          if (rem <= 0 && !warnedAt.current.warnOver) {
+            warnedAt.current.warnOver = true;
+            sendWarning(t('child.home.lockNotifTitle'), t('child.home.lockNotifBody'));
+          }
           const locked = await ExpoUsageStats.isLocked();
           if (locked) {
             await ExpoUsageStats.hideLockOverlay();
@@ -276,13 +292,48 @@ export default function ChildHome() {
     prevRemaining.current = rem;
   }, [screenData]);
 
-  // 앱이 포그라운드로 돌아올 때 오버레이 상태 재확인
+  // 앱이 포그라운드로 돌아올 때 오버레이 상태 재확인 + 날짜 변경 시 스크린타임 리셋
   useEffect(() => {
+    let lastDate = new Date().toISOString().split('T')[0];
     const sub = AppState.addEventListener('change', async (state) => {
-      if (state === 'active' && Platform.OS === 'android') {
+      if (state === 'active') {
+        // 포그라운드 진입: 네이티브 시스템 오버레이는 항상 해제 (RN 모달이 잠금 UI 담당)
+        if (Platform.OS === 'android') {
+          try {
+            const locked = await ExpoUsageStats.isLocked();
+            if (locked) await ExpoUsageStats.hideLockOverlay();
+          } catch (e) {}
+        }
+        // 날짜가 바뀌었으면 스크린타임 초기화 (자정 이후 잠금 해제 대응)
+        const today = new Date().toISOString().split('T')[0];
+        if (today !== lastDate) {
+          lastDate = today;
+          try {
+            warnedAt.current = { warn15: false, warn5: false, warnOver: false };
+            prevRemaining.current = null;
+            await initScreentime();
+          } catch (e) {}
+        }
+        if (Platform.OS === 'android') {
+          try {
+            const has = await ExpoUsageStats.checkOverlayPermission();
+            if (has) setNeedOverlayPerm(false);
+          } catch (e) {}
+        }
+      } else if (state === 'background' || state === 'inactive') {
+        // 백그라운드 진입: 사용시간이 초과된 상태라면 네이티브 오버레이로 다른 앱 차단
+        if (Platform.OS !== 'android') return;
         try {
-          const has = await ExpoUsageStats.checkOverlayPermission();
-          if (has) setNeedOverlayPerm(false);
+          const { usage, limit } = latestUsageRef.current;
+          const rem = Math.max(0, (limit || 240) - (usage || 0));
+          if (rem <= 0) {
+            const hasOverlay = await ExpoUsageStats.checkOverlayPermission();
+            if (hasOverlay) {
+              await ExpoUsageStats.showLockOverlay(
+                t('child.home.timeOverOverlay', { limit: fmt(limit || 240) })
+              );
+            }
+          }
         } catch (e) {}
       }
     });
@@ -313,7 +364,7 @@ export default function ChildHome() {
     };
   }, [user, familyId]);
 
-  // 위치 추적
+  // 위치 추적 + 배터리 독립 동기화
   useEffect(() => {
     startLocationTracking()
       .then((r) => {
@@ -322,6 +373,9 @@ export default function ChildHome() {
         else                              setLocStatus('noPermission');
       })
       .catch(() => setLocStatus('error'));
+    // 위치와 별도로 배터리 주기적 동기화
+    startBatterySync();
+    return () => stopBatterySync();
   }, []);
 
   // 스크린타임 초기화 + 추적
@@ -335,7 +389,17 @@ export default function ChildHome() {
       }
       const mode = await startUsageTracking();
       setTrackingMode(mode);
-      unsubscribe = subscribeMyScreentime((data) => setScreenData(data));
+      unsubscribe = subscribeMyScreentime((data) => {
+        // 날짜가 어제 데이터면 initScreentime으로 리셋 (자정 넘김 대응)
+        if (data && data.date) {
+          const today = new Date().toISOString().split('T')[0];
+          if (data.date !== today) {
+            initScreentime().catch(() => {});
+            return; // 리셋 후 새 데이터가 다시 콜백으로 들어옴
+          }
+        }
+        setScreenData(data);
+      });
     }
     init();
     return () => { stopUsageTracking(); unsubscribe(); };
