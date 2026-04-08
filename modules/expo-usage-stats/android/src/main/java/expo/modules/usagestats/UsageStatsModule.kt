@@ -54,8 +54,10 @@ class UsageStatsModule : Module() {
             val usageStatsManager =
                 context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
+            // INTERVAL_DAILY는 일부 Samsung/기타 OEM 태블릿에서 당일(intraday) 쿼리 시
+            // 빈 결과를 반환하는 알려진 문제가 있음 → INTERVAL_BEST 사용
             val stats = usageStatsManager.queryUsageStats(
-                UsageStatsManager.INTERVAL_DAILY,
+                UsageStatsManager.INTERVAL_BEST,
                 startTime,
                 endTime
             )
