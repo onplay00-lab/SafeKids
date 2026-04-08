@@ -1,5 +1,6 @@
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const fetch = require("node-fetch");
@@ -533,5 +534,118 @@ exports.analyzeDailyBehavior = onDocumentCreated(
         data: { type: "behaviorAlert", familyId, childUid },
       });
     }
+  }
+);
+
+// ============================================
+// 11) 자정 스크린타임 리셋 (KST 00:00 스케줄)
+// 디바이스가 잠금 상태이면 클라이언트 측 리셋이 실행 안 되므로
+// 서버에서 전날 데이터를 히스토리에 저장하고 오늘 날짜로 초기화
+// ============================================
+const DEFAULT_APPS_SERVER = {
+  youtube: { name: "YouTube",       code: "YT", color: "#FCEBEB", tc: "#791F1F", limit: 60 },
+  game:    { name: "Game (Roblox)", code: "GE", color: "#FAEEDA", tc: "#633806", limit: 60 },
+  edu:     { name: "EduApp",        code: "ED", color: "#EAF3DE", tc: "#27500A", limit: null },
+};
+const DEFAULT_DAILY_LIMIT_SERVER = 240;
+
+exports.resetDailyScreentime = onSchedule(
+  {
+    schedule: "0 0 * * *",    // 매일 자정
+    timeZone: "Asia/Seoul",   // KST 기준
+  },
+  async (_event) => {
+    // Cloud Function은 UTC로 실행되므로 KST 날짜를 직접 계산
+    const nowMs = Date.now();
+    const kstOffsetMs = 9 * 60 * 60 * 1000; // UTC+9
+
+    // "오늘" KST 날짜 문자열 (자정 직후이므로 새 날짜)
+    const todayKst = new Date(nowMs + kstOffsetMs);
+    const todayStr = todayKst.toISOString().slice(0, 10);
+
+    // "어제" KST 날짜 문자열 (리셋 대상)
+    const yesterdayKst = new Date(nowMs + kstOffsetMs - 24 * 60 * 60 * 1000);
+    const yesterdayStr = yesterdayKst.toISOString().slice(0, 10);
+    const todayDayOfWeek = todayKst.getUTCDay(); // 0=일, 1=월, ..., 6=토
+
+    console.log(`[resetDailyScreentime] ${yesterdayStr} → ${todayStr} 리셋 시작`);
+
+    // 어제 날짜로 남아있는 screentime 문서 모두 조회
+    let snap;
+    try {
+      snap = await db.collectionGroup("screentime")
+        .where("date", "==", yesterdayStr)
+        .get();
+    } catch (e) {
+      console.error("[resetDailyScreentime] collectionGroup 쿼리 실패:", e);
+      return;
+    }
+
+    if (snap.empty) {
+      console.log("[resetDailyScreentime] 리셋 대상 없음");
+      return;
+    }
+
+    const historyWrites = [];
+    const resetWrites = [];
+
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      const pathParts = docSnap.ref.path.split("/");
+      // 경로: families/{familyId}/screentime/{childUid}
+      if (pathParts.length < 4) continue;
+      const familyId = pathParts[1];
+      const childUid = pathParts[3];
+
+      // 1) 전날 데이터를 히스토리에 저장 (클라이언트 initScreentime과 동일 구조)
+      const histRef = db.doc(
+        `families/${familyId}/screentimeHistory/${childUid}/daily/${yesterdayStr}`
+      );
+      historyWrites.push(
+        histRef.set({
+          date: yesterdayStr,
+          dailyUsage: data.dailyUsage || 0,
+          dailyLimit: data.dailyLimit || DEFAULT_DAILY_LIMIT_SERVER,
+          apps: data.apps || {},
+          allAppsUsage: data.allAppsUsage || [],
+          savedAt: new Date(),
+        })
+      );
+
+      // 2) 앱별 초기값 (제한 시간은 이전 설정 유지)
+      const prevApps = data.apps || {};
+      const apps = {};
+      for (const [key, def] of Object.entries(DEFAULT_APPS_SERVER)) {
+        apps[key] = {
+          ...def,
+          used: 0,
+          usedSeconds: 0,
+          limit: prevApps[key]?.limit !== undefined ? prevApps[key].limit : def.limit,
+        };
+      }
+
+      // 3) 요일별 제한이 있으면 오늘 요일 제한 적용
+      let todayLimit = data.dailyLimit || DEFAULT_DAILY_LIMIT_SERVER;
+      const weeklyLimits = data.weeklyLimits;
+      if (weeklyLimits && weeklyLimits[todayDayOfWeek] !== undefined) {
+        todayLimit = weeklyLimits[todayDayOfWeek];
+      }
+
+      // 4) 스크린타임 오늘 날짜로 리셋
+      resetWrites.push(
+        docSnap.ref.set({
+          dailyUsage: 0,
+          dailyUsageSeconds: 0,
+          dailyLimit: todayLimit,
+          date: todayStr,
+          apps,
+          weeklyLimits: data.weeklyLimits || null,
+          updatedAt: new Date(),
+        })
+      );
+    }
+
+    await Promise.all([...historyWrites, ...resetWrites]);
+    console.log(`[resetDailyScreentime] ${snap.docs.length}개 문서 리셋 완료`);
   }
 );

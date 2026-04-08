@@ -1,6 +1,13 @@
 {
   "indexes": [
     {
+      "collectionGroup": "screentime",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "emotionChecks",
       "queryScope": "COLLECTION",
       "fields": [
