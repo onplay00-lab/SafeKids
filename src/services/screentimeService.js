@@ -196,6 +196,20 @@ async function syncFromNative() {
     };
   }
 
+  // getUsageStats가 0을 반환하면 (권한 문제/일시적 오류) 현재 Firestore 값 유지
+  // 단, initScreentime으로 리셋 직후(lastSyncDate가 방금 설정된 경우)는 0으로 써도 OK
+  let storedSeconds = 0;
+  if (totalSeconds === 0) {
+    try {
+      const checkSnap = await getDoc(ref);
+      if (checkSnap.exists()) storedSeconds = checkSnap.data().dailyUsageSeconds || 0;
+    } catch (_) {}
+    if (storedSeconds > 0) {
+      console.warn('[Screentime] getUsageStats returned 0 but Firestore has', storedSeconds, 's — skipping overwrite');
+      return;
+    }
+  }
+
   // 앱별 데이터 업데이트
   const apps = { ...cachedApps };
   for (const [key] of Object.entries(DEFAULT_APPS)) {
