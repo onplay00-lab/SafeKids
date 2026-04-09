@@ -570,18 +570,26 @@ exports.resetDailyScreentime = onSchedule(
 
     console.log(`[resetDailyScreentime] ${yesterdayStr} → ${todayStr} 리셋 시작`);
 
-    // 어제 날짜로 남아있는 screentime 문서 모두 조회
-    let snap;
-    try {
-      snap = await db.collectionGroup("screentime")
-        .where("date", "==", yesterdayStr)
-        .get();
-    } catch (e) {
-      console.error("[resetDailyScreentime] collectionGroup 쿼리 실패:", e);
+    // collectionGroup 쿼리는 인덱스 빌드가 필요하므로
+    // families 목록을 직접 열거한 후 각 screentime 서브컬렉션을 조회
+    const familiesSnap = await db.collection("families").get();
+    if (familiesSnap.empty) {
+      console.log("[resetDailyScreentime] families 없음");
       return;
     }
 
-    if (snap.empty) {
+    // 각 family의 screentime 서브컬렉션에서 어제 날짜 문서 수집
+    const allDocs = [];
+    for (const famDoc of familiesSnap.docs) {
+      const screentimeSnap = await famDoc.ref.collection("screentime")
+        .where("date", "==", yesterdayStr)
+        .get();
+      for (const d of screentimeSnap.docs) {
+        allDocs.push({ docSnap: d, familyId: famDoc.id });
+      }
+    }
+
+    if (allDocs.length === 0) {
       console.log("[resetDailyScreentime] 리셋 대상 없음");
       return;
     }
@@ -589,13 +597,9 @@ exports.resetDailyScreentime = onSchedule(
     const historyWrites = [];
     const resetWrites = [];
 
-    for (const docSnap of snap.docs) {
+    for (const { docSnap, familyId } of allDocs) {
       const data = docSnap.data();
-      const pathParts = docSnap.ref.path.split("/");
-      // 경로: families/{familyId}/screentime/{childUid}
-      if (pathParts.length < 4) continue;
-      const familyId = pathParts[1];
-      const childUid = pathParts[3];
+      const childUid = docSnap.id;
 
       // 1) 전날 데이터를 히스토리에 저장 (클라이언트 initScreentime과 동일 구조)
       const histRef = db.doc(

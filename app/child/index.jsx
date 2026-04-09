@@ -263,28 +263,21 @@ export default function ChildHome() {
         const hasOverlay = await ExpoUsageStats.checkOverlayPermission();
         if (!hasOverlay) return;
 
-        // 앱이 포그라운드일 때는 RN 모달이 잠금화면을 표시하므로
-        // 네이티브 시스템 오버레이는 숨긴다 (이중 잠금화면 방지)
-        const inForeground = AppState.currentState === 'active';
-
-        if (rem <= 0 && !inForeground) {
+        if (rem <= 0) {
           if (!warnedAt.current.warnOver) {
             warnedAt.current.warnOver = true;
             sendWarning(t('child.home.lockNotifTitle'), t('child.home.lockNotifBody'));
           }
-          await ExpoUsageStats.showLockOverlay(
-            t('child.home.timeOverOverlay', { limit: fmt(limit) })
-          );
+          // 네이티브 오버레이 표시는 AppState background 핸들러가 담당
+          // 여기서는 포그라운드 진입 시 네이티브 오버레이만 해제 (중복 방지)
+          if (AppState.currentState === 'active') {
+            const locked = await ExpoUsageStats.isLocked();
+            if (locked) await ExpoUsageStats.hideLockOverlay();
+          }
         } else {
-          // 시간이 남아있거나 앱이 포그라운드 → 네이티브 오버레이 해제
-          if (rem <= 0 && !warnedAt.current.warnOver) {
-            warnedAt.current.warnOver = true;
-            sendWarning(t('child.home.lockNotifTitle'), t('child.home.lockNotifBody'));
-          }
+          // 시간이 남아있으면 네이티브 오버레이 해제
           const locked = await ExpoUsageStats.isLocked();
-          if (locked) {
-            await ExpoUsageStats.hideLockOverlay();
-          }
+          if (locked) await ExpoUsageStats.hideLockOverlay();
         }
       } catch (e) {}
     }
