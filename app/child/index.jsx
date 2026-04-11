@@ -50,7 +50,6 @@ export default function ChildHome() {
   const [blockingData, setBlockingData] = useState(null);
   const [currentEmotion, setCurrentEmotion] = useState(null);
   const [showEmotionPicker, setShowEmotionPicker] = useState(false);
-  const [soundCountdown, setSoundCountdown] = useState(0);
   const soundRecordingRef = useRef(false);
   const prevRemaining = useRef(null);
   const warnedAt = useRef({ warn15: false, warn5: false, warnOver: false });
@@ -64,14 +63,18 @@ export default function ChildHome() {
       if (!request || soundRecordingRef.current) return;
       try {
         soundRecordingRef.current = true;
-        setSoundCountdown(30);
+        // 배너 숨김 — 아이가 녹음 중임을 인지 못하게
 
-        const { granted } = await Audio.requestPermissionsAsync();
+        // 권한은 앱 시작 시 이미 요청됨. 혹시 미허용이면 다시 시도하되 UI 없이 진행
+        const { granted } = await Audio.getPermissionsAsync();
         if (!granted) {
-          await updateSoundRequest(familyId, request.id, { status: 'failed', reason: 'permission_denied' });
-          soundRecordingRef.current = false;
-          setSoundCountdown(0);
-          return;
+          // 백그라운드에서 조용히 재요청 (OS 다이얼로그 없이 기존 상태 확인만)
+          const retry = await Audio.requestPermissionsAsync();
+          if (!retry.granted) {
+            await updateSoundRequest(familyId, request.id, { status: 'failed', reason: 'permission_denied' });
+            soundRecordingRef.current = false;
+            return;
+          }
         }
 
         await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
@@ -79,15 +82,7 @@ export default function ChildHome() {
         await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
         await recording.startAsync();
 
-        const timer = setInterval(() => {
-          setSoundCountdown(prev => {
-            if (prev <= 1) { clearInterval(timer); return 0; }
-            return prev - 1;
-          });
-        }, 1000);
-
         setTimeout(async () => {
-          clearInterval(timer);
           try {
             await recording.stopAndUnloadAsync();
             const uri = recording.getURI();
@@ -102,14 +97,12 @@ export default function ChildHome() {
             await updateSoundRequest(familyId, request.id, { status: 'failed', reason: e.message });
           } finally {
             soundRecordingRef.current = false;
-            setSoundCountdown(0);
           }
         }, 30000);
       } catch (e) {
         console.error('녹음 시작 실패:', e);
         await updateSoundRequest(familyId, request.id, { status: 'failed', reason: e.message });
         soundRecordingRef.current = false;
-        setSoundCountdown(0);
       }
     });
     return () => unsub();
@@ -371,6 +364,11 @@ export default function ChildHome() {
     return () => stopBatterySync();
   }, []);
 
+  // 앱 시작 시 마이크 권한 미리 요청 (Sound Around 요청 올 때 OS 다이얼로그 안 뜨게)
+  useEffect(() => {
+    Audio.requestPermissionsAsync().catch(() => {});
+  }, []);
+
   // 스크린타임 초기화 + 추적
   useEffect(() => {
     let unsubscribe = () => {};
@@ -507,14 +505,6 @@ export default function ChildHome() {
           </View>
         </View>
       </Modal>
-
-      {/* Sound Around 녹음 중 배너 */}
-      {soundCountdown > 0 && (
-        <View style={s.soundBanner}>
-          <Text style={s.soundBannerEmoji}>🎙️</Text>
-          <Text style={s.soundBannerText}>{t('child.home.soundRecording', { sec: soundCountdown })}</Text>
-        </View>
-      )}
 
       {/* 위치 상태 */}
       <View style={s.locBar}>
