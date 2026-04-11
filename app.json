@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.onplay00.safekidsapp",
-      "versionCode": 22,
+      "versionCode": 23,
       "softwareKeyboardLayoutMode": "resize"
     },
     "ios": {
