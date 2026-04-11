@@ -578,14 +578,16 @@ exports.resetDailyScreentime = onSchedule(
       return;
     }
 
-    // 각 family의 screentime 서브컬렉션에서 어제 날짜 문서 수집
+    // 각 family의 screentime 서브컬렉션에서 오늘 날짜가 아닌 문서 수집
+    // date == yesterdayStr 대신 date != todayStr 사용:
+    // 서버 쿼리 타이밍, 다중 일수 미처리 등 edge case 대응
     const allDocs = [];
     for (const famDoc of familiesSnap.docs) {
-      const screentimeSnap = await famDoc.ref.collection("screentime")
-        .where("date", "==", yesterdayStr)
-        .get();
+      const screentimeSnap = await famDoc.ref.collection("screentime").get();
       for (const d of screentimeSnap.docs) {
-        allDocs.push({ docSnap: d, familyId: famDoc.id });
+        if (d.data().date !== todayStr) {
+          allDocs.push({ docSnap: d, familyId: famDoc.id });
+        }
       }
     }
 
@@ -602,12 +604,14 @@ exports.resetDailyScreentime = onSchedule(
       const childUid = docSnap.id;
 
       // 1) 전날 데이터를 히스토리에 저장 (클라이언트 initScreentime과 동일 구조)
+      // data.date를 사용 (yesterdayStr 고정 X — 다중 일수 미처리 문서 대응)
+      const docDate = data.date || yesterdayStr;
       const histRef = db.doc(
-        `families/${familyId}/screentimeHistory/${childUid}/daily/${yesterdayStr}`
+        `families/${familyId}/screentimeHistory/${childUid}/daily/${docDate}`
       );
       historyWrites.push(
         histRef.set({
-          date: yesterdayStr,
+          date: docDate,
           dailyUsage: data.dailyUsage || 0,
           dailyLimit: data.dailyLimit || DEFAULT_DAILY_LIMIT_SERVER,
           apps: data.apps || {},
@@ -650,6 +654,6 @@ exports.resetDailyScreentime = onSchedule(
     }
 
     await Promise.all([...historyWrites, ...resetWrites]);
-    console.log(`[resetDailyScreentime] ${snap.docs.length}개 문서 리셋 완료`);
+    console.log(`[resetDailyScreentime] ${allDocs.length}개 문서 리셋 완료`);
   }
 );
