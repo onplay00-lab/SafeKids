@@ -66,9 +66,7 @@ class UsageStatsModule : Module() {
 
             if (stats != null) {
                 for (stat in stats) {
-                    // Samsung/OEM 태블릿에서 INTERVAL_BEST가 어제 완료된 daily bucket을 반환하는
-                    // 문제가 있음. stat.beginTimeStamp < startTime이면 어제 bucket이므로 제외.
-                    if (stat.totalTimeInForeground > 0 && stat.lastTimeUsed >= startTime) {
+                    if (stat.totalTimeInForeground > 0) {
                         result.add(
                             mapOf(
                                 "packageName" to stat.packageName,
