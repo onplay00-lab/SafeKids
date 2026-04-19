@@ -234,10 +234,13 @@ export async function startLocationTracking() {
     const TaskManager = require('expo-task-manager');
     const isRegistered = await TaskManager.isTaskRegisteredAsync(LOCATION_TASK);
     if (!isRegistered) {
+      // distanceInterval: 0 → 태블릿이 정지해도 timeInterval(3분)마다 콜백 발화
+      // 이때 saveLocation()이 호출되어 위치+배터리가 같이 업데이트됨
+      // 포그라운드 서비스 덕분에 OS가 앱을 죽이지 않음
       await Location.startLocationUpdatesAsync(LOCATION_TASK, {
         accuracy: Location.Accuracy.Balanced,
-        timeInterval: 60000,
-        distanceInterval: 50,
+        timeInterval: 180000,      // 3분
+        distanceInterval: 0,        // 거리 조건 제거 → 시간 기반 주기 보장
         showsBackgroundLocationIndicator: true,
         foregroundService: {
           notificationTitle: 'SafeKids',
