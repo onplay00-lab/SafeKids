@@ -180,7 +180,7 @@ async function syncFromNative() {
 
   for (const stat of rawStats) {
     const sec = Math.floor(stat.totalTimeInForeground / 1000);
-    if (sec < 60) continue; // 1분 미만은 무시
+    if (sec <= 0) continue; // 0초 이하만 무시 (과거 1분 미만 필터 제거 — StayFree 등과 총계 일치시키기 위함)
     totalSeconds += sec;
 
     const key = PACKAGE_MAP[stat.packageName];

@@ -1,6 +1,7 @@
 package expo.modules.usagestats
 
 import android.app.AppOpsManager
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -54,26 +55,58 @@ class UsageStatsModule : Module() {
             val usageStatsManager =
                 context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-            // INTERVAL_DAILY는 일부 Samsung/기타 OEM 태블릿에서 당일(intraday) 쿼리 시
-            // 빈 결과를 반환하는 알려진 문제가 있음 → INTERVAL_BEST 사용
-            val stats = usageStatsManager.queryUsageStats(
-                UsageStatsManager.INTERVAL_BEST,
-                startTime,
-                endTime
-            )
+            // queryUsageStats(INTERVAL_BEST)는 Samsung 등 일부 OEM에서 어제 daily bucket이
+            // 오늘 쿼리에 유출되는 문제가 있음. queryEvents로 실제 ACTIVITY_RESUMED/PAUSED
+            // 이벤트를 페어링해서 정확한 구간별 사용량을 직접 계산.
+            val totals = mutableMapOf<String, Long>()
+            val activeStart = mutableMapOf<String, Long>()
+
+            try {
+                val events = usageStatsManager.queryEvents(startTime, endTime)
+                val event = UsageEvents.Event()
+
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event)
+                    val pkg = event.packageName ?: continue
+                    when (event.eventType) {
+                        // MOVE_TO_FOREGROUND=1 (ACTIVITY_RESUMED from API 29)
+                        UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                            activeStart[pkg] = event.timeStamp
+                        }
+                        // MOVE_TO_BACKGROUND=2 (ACTIVITY_PAUSED from API 29)
+                        UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                            // PAUSE without prior RESUME in range: 구간 시작 시점부터 포그라운드였다고 가정
+                            val start = activeStart[pkg] ?: startTime
+                            val duration = event.timeStamp - start
+                            if (duration > 0) {
+                                totals[pkg] = (totals[pkg] ?: 0) + duration
+                            }
+                            activeStart.remove(pkg)
+                        }
+                    }
+                }
+
+                // endTime 시점에도 포그라운드 상태인 앱 처리
+                for ((pkg, start) in activeStart) {
+                    val duration = endTime - start
+                    if (duration > 0) {
+                        totals[pkg] = (totals[pkg] ?: 0) + duration
+                    }
+                }
+            } catch (e: Exception) {
+                // queryEvents 실패 시 빈 결과 반환 (기존 Firestore 값 유지)
+                return@AsyncFunction emptyList<Map<String, Any>>()
+            }
 
             val result = mutableListOf<Map<String, Any>>()
-
-            if (stats != null) {
-                for (stat in stats) {
-                    if (stat.totalTimeInForeground > 0) {
-                        result.add(
-                            mapOf(
-                                "packageName" to stat.packageName,
-                                "totalTimeInForeground" to stat.totalTimeInForeground
-                            )
+            for ((pkg, ms) in totals) {
+                if (ms > 0) {
+                    result.add(
+                        mapOf(
+                            "packageName" to pkg,
+                            "totalTimeInForeground" to ms
                         )
-                    }
+                    )
                 }
             }
 
