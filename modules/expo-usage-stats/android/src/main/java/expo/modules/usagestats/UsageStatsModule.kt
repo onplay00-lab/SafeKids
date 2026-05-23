@@ -61,38 +61,70 @@ class UsageStatsModule : Module() {
             val totals = mutableMapOf<String, Long>()
             val activeStart = mutableMapOf<String, Long>()
 
+            // 화면 OFF/잠금/디바이스 종료 시 모든 활성 세션을 닫는 헬퍼
+            // (삼성 One UI는 MOVE_TO_BACKGROUND 누락이 흔함 → 과대 측정 방지)
+            fun closeAllSessions(atTime: Long) {
+                if (activeStart.isEmpty()) return
+                val it = activeStart.entries.iterator()
+                while (it.hasNext()) {
+                    val (pkg, start) = it.next()
+                    val duration = atTime - start
+                    if (duration > 0) {
+                        totals[pkg] = (totals[pkg] ?: 0) + duration
+                    }
+                    it.remove()
+                }
+            }
+
+            // UsageEvents 상수 (일부 SDK 버전에서 심볼 미제공이라 정수 리터럴 사용)
+            val SCREEN_NON_INTERACTIVE = 16
+            val KEYGUARD_SHOWN = 17
+            val ACTIVITY_STOPPED = 23
+            val DEVICE_SHUTDOWN = 26
+
             try {
                 val events = usageStatsManager.queryEvents(startTime, endTime)
                 val event = UsageEvents.Event()
 
                 while (events.hasNextEvent()) {
                     events.getNextEvent(event)
-                    val pkg = event.packageName ?: continue
-                    when (event.eventType) {
-                        // MOVE_TO_FOREGROUND=1 (ACTIVITY_RESUMED from API 29)
-                        UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                            activeStart[pkg] = event.timeStamp
-                        }
-                        // MOVE_TO_BACKGROUND=2 (ACTIVITY_PAUSED from API 29)
-                        UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                            // PAUSE without prior RESUME in range: 구간 시작 시점부터 포그라운드였다고 가정
-                            val start = activeStart[pkg] ?: startTime
-                            val duration = event.timeStamp - start
-                            if (duration > 0) {
-                                totals[pkg] = (totals[pkg] ?: 0) + duration
+                    val pkg = event.packageName
+                    val type = event.eventType
+                    val ts = event.timeStamp
+
+                    if (type == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                        if (pkg != null) {
+                            // 삼성 분할화면/멀티윈도우 대응: 한 번에 한 앱만 활성으로 강제.
+                            // 새 앱이 올라오면 기존 활성 세션들은 이 시점에 종료.
+                            if (activeStart.isNotEmpty() && !activeStart.containsKey(pkg)) {
+                                closeAllSessions(ts)
                             }
-                            activeStart.remove(pkg)
+                            if (!activeStart.containsKey(pkg)) {
+                                activeStart[pkg] = ts
+                            }
                         }
+                    } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND ||
+                               type == ACTIVITY_STOPPED) {
+                        if (pkg != null) {
+                            val start = activeStart[pkg]
+                            if (start != null) {
+                                val duration = ts - start
+                                if (duration > 0) {
+                                    totals[pkg] = (totals[pkg] ?: 0) + duration
+                                }
+                                activeStart.remove(pkg)
+                            }
+                        }
+                    } else if (type == SCREEN_NON_INTERACTIVE ||
+                               type == KEYGUARD_SHOWN ||
+                               type == DEVICE_SHUTDOWN) {
+                        // 화면 OFF/잠금/종료 — 모든 활성 세션 종료
+                        closeAllSessions(ts)
                     }
                 }
 
                 // endTime 시점에도 포그라운드 상태인 앱 처리
-                for ((pkg, start) in activeStart) {
-                    val duration = endTime - start
-                    if (duration > 0) {
-                        totals[pkg] = (totals[pkg] ?: 0) + duration
-                    }
-                }
+                closeAllSessions(endTime)
             } catch (e: Exception) {
                 // queryEvents 실패 시 빈 결과 반환 (기존 Firestore 값 유지)
                 return@AsyncFunction emptyList<Map<String, Any>>()
