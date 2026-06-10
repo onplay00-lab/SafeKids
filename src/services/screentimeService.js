@@ -5,6 +5,7 @@ import {
   checkPermission,
   requestPermission,
   getUsageStats,
+  startMonitoring,
 } from '../../modules/expo-usage-stats/index';
 
 // ============================================
@@ -46,9 +47,10 @@ let lastSyncDate = null; // 마지막 동기화 날짜 캐시
 let cachedApps = null; // 앱 데이터 캐시 (매번 getDoc 방지)
 
 // ============================================
-// 날짜 문자열 (YYYY-MM-DD)
+// 날짜 문자열 (YYYY-MM-DD, 로컬 시간 기준)
+// 주의: toISOString()은 UTC라서 한국시간 00~09시에 어제 날짜가 나옴 — 사용 금지
 // ============================================
-function todayStr() {
+export function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
@@ -300,6 +302,11 @@ export async function startUsageTracking() {
       const hasPermission = await checkPermission();
       if (hasPermission) {
         usingNative = true;
+        // 네이티브 상시 감시 서비스 시작 — 한도 체크/잠금/자정 해제는
+        // 앱이 백그라운드/종료 상태여도 이 서비스가 수행한다
+        try { await startMonitoring(); } catch (e) {
+          console.warn('[Screentime] startMonitoring 실패:', e);
+        }
         // 즉시 한 번 동기화
         await syncFromNative();
         // 60초마다 실제 사용량 동기화

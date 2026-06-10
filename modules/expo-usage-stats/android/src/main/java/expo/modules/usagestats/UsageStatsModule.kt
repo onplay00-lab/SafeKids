@@ -1,18 +1,19 @@
+// Expo 네이티브 모듈 진입점. 사용량 조회/권한/모니터링 서비스 제어/배터리 API를 JS에 노출한다.
+// 사용량 계산은 UsageCalculator, 잠금·감시는 MonitoringService가 담당.
 package expo.modules.usagestats
 
 import android.app.AppOpsManager
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
+import android.os.PowerManager
 import android.os.Process
 import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import org.json.JSONObject
 
 class UsageStatsModule : Module() {
     override fun definition() = ModuleDefinition {
@@ -52,86 +53,10 @@ class UsageStatsModule : Module() {
             val context = appContext.reactContext
                 ?: return@AsyncFunction emptyList<Map<String, Any>>()
 
-            val usageStatsManager =
-                context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-
-            // queryUsageStats(INTERVAL_BEST)는 Samsung 등 일부 OEM에서 어제 daily bucket이
-            // 오늘 쿼리에 유출되는 문제가 있음. queryEvents로 실제 ACTIVITY_RESUMED/PAUSED
-            // 이벤트를 페어링해서 정확한 구간별 사용량을 직접 계산.
-            val totals = mutableMapOf<String, Long>()
-            val activeStart = mutableMapOf<String, Long>()
-
-            // 화면 OFF/잠금/디바이스 종료 시 모든 활성 세션을 닫는 헬퍼
-            // (삼성 One UI는 MOVE_TO_BACKGROUND 누락이 흔함 → 과대 측정 방지)
-            fun closeAllSessions(atTime: Long) {
-                if (activeStart.isEmpty()) return
-                val it = activeStart.entries.iterator()
-                while (it.hasNext()) {
-                    val (pkg, start) = it.next()
-                    val duration = atTime - start
-                    if (duration > 0) {
-                        totals[pkg] = (totals[pkg] ?: 0) + duration
-                    }
-                    it.remove()
-                }
-            }
-
-            // UsageEvents 상수 (일부 SDK 버전에서 심볼 미제공이라 정수 리터럴 사용)
-            val SCREEN_NON_INTERACTIVE = 16
-            val KEYGUARD_SHOWN = 17
-            val ACTIVITY_STOPPED = 23
-            val DEVICE_SHUTDOWN = 26
-
-            try {
-                val events = usageStatsManager.queryEvents(startTime, endTime)
-                val event = UsageEvents.Event()
-
-                while (events.hasNextEvent()) {
-                    events.getNextEvent(event)
-                    val pkg = event.packageName
-                    val type = event.eventType
-                    val ts = event.timeStamp
-
-                    if (type == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                        if (pkg != null) {
-                            // 삼성 분할화면/멀티윈도우 대응: 한 번에 한 앱만 활성으로 강제.
-                            // 새 앱이 올라오면 기존 활성 세션들은 이 시점에 종료.
-                            if (activeStart.isNotEmpty() && !activeStart.containsKey(pkg)) {
-                                closeAllSessions(ts)
-                            }
-                            if (!activeStart.containsKey(pkg)) {
-                                activeStart[pkg] = ts
-                            }
-                        }
-                    } else if (type == UsageEvents.Event.MOVE_TO_BACKGROUND ||
-                               type == ACTIVITY_STOPPED) {
-                        if (pkg != null) {
-                            val start = activeStart[pkg]
-                            if (start != null) {
-                                val duration = ts - start
-                                if (duration > 0) {
-                                    totals[pkg] = (totals[pkg] ?: 0) + duration
-                                }
-                                activeStart.remove(pkg)
-                            }
-                        }
-                    } else if (type == SCREEN_NON_INTERACTIVE ||
-                               type == KEYGUARD_SHOWN ||
-                               type == DEVICE_SHUTDOWN) {
-                        // 화면 OFF/잠금/종료 — 모든 활성 세션 종료
-                        closeAllSessions(ts)
-                    }
-                }
-
-                // endTime 시점에도 포그라운드 상태인 앱 처리
-                closeAllSessions(endTime)
-            } catch (e: Exception) {
-                // queryEvents 실패 시 빈 결과 반환 (기존 Firestore 값 유지)
-                return@AsyncFunction emptyList<Map<String, Any>>()
-            }
+            val calc = UsageCalculator.calculate(context, startTime, endTime)
 
             val result = mutableListOf<Map<String, Any>>()
-            for ((pkg, ms) in totals) {
+            for ((pkg, ms) in calc.totals) {
                 if (ms > 0) {
                     result.add(
                         mapOf(
@@ -141,11 +66,72 @@ class UsageStatsModule : Module() {
                     )
                 }
             }
-
             result
         }
 
-        // 오버레이 권한 확인
+        // ============ 모니터링 서비스 제어 ============
+
+        // 상시 감시 시작 (아이 기기). 상태는 prefs에 저장되어 재부팅/프로세스 킬에도 복원.
+        AsyncFunction("startMonitoring") {
+            val context = appContext.reactContext ?: return@AsyncFunction null
+            MonitoringService.prefs(context).edit()
+                .putBoolean("monitoringEnabled", true)
+                .apply()
+            MonitoringService.start(context, MonitoringService.ACTION_START)
+            null
+        }
+
+        AsyncFunction("stopMonitoring") {
+            val context = appContext.reactContext ?: return@AsyncFunction null
+            MonitoringService.prefs(context).edit()
+                .putBoolean("monitoringEnabled", false)
+                .putBoolean("manualLocked", false)
+                .apply()
+            MonitoringService.start(context, MonitoringService.ACTION_STOP)
+            null
+        }
+
+        // 감시 설정 갱신. JSON: { dailyLimitMinutes, blockedPackages, lockMessage, blockMessage }
+        AsyncFunction("setMonitoringConfig") { configJson: String ->
+            val context = appContext.reactContext ?: return@AsyncFunction null
+            try {
+                val json = JSONObject(configJson)
+                val editor = MonitoringService.prefs(context).edit()
+
+                if (json.has("dailyLimitMinutes")) {
+                    editor.putInt("dailyLimitMinutes", json.getInt("dailyLimitMinutes"))
+                }
+                if (json.has("blockedPackages")) {
+                    editor.putString("blockedPackages", json.getJSONArray("blockedPackages").toString())
+                }
+                if (json.has("lockMessage")) {
+                    editor.putString("lockMessage", json.getString("lockMessage"))
+                }
+                if (json.has("blockMessage")) {
+                    editor.putString("blockMessage", json.getString("blockMessage"))
+                }
+                editor.apply()
+
+                // 모니터링 중이면 즉시 반영
+                if (MonitoringService.prefs(context).getBoolean("monitoringEnabled", false)) {
+                    MonitoringService.start(context, MonitoringService.ACTION_TICK)
+                }
+            } catch (e: Exception) {}
+            null
+        }
+
+        // 네이티브 tick이 계산해 둔 오늘 사용량(초). JS가 Firestore 동기화에 활용 가능.
+        AsyncFunction("getNativeUsage") {
+            val context = appContext.reactContext ?: return@AsyncFunction null
+            val p = MonitoringService.prefs(context)
+            mapOf(
+                "usageSeconds" to p.getLong("usageSeconds", 0),
+                "usageDate" to (p.getString("usageDate", null) ?: "")
+            )
+        }
+
+        // ============ 오버레이 권한 ============
+
         AsyncFunction("checkOverlayPermission") {
             val context = appContext.reactContext ?: return@AsyncFunction false
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -155,7 +141,6 @@ class UsageStatsModule : Module() {
             }
         }
 
-        // 오버레이 권한 요청
         AsyncFunction("requestOverlayPermission") {
             val context = appContext.reactContext ?: return@AsyncFunction null
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -169,49 +154,61 @@ class UsageStatsModule : Module() {
             null
         }
 
-        // 잠금 오버레이 표시
+        // ============ 배터리 최적화 예외 (삼성 등 OEM의 백그라운드 킬 방지) ============
+
+        AsyncFunction("isIgnoringBatteryOptimizations") {
+            val context = appContext.reactContext ?: return@AsyncFunction false
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            pm.isIgnoringBatteryOptimizations(context.packageName)
+        }
+
+        AsyncFunction("requestIgnoreBatteryOptimizations") {
+            val context = appContext.reactContext ?: return@AsyncFunction null
+            try {
+                @Suppress("BatteryLife")
+                val intent = Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:${context.packageName}")
+                )
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                // 일부 기기에서 다이얼로그 미지원 → 설정 목록 화면으로 폴백
+                try {
+                    val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                } catch (e2: Exception) {}
+            }
+            null
+        }
+
+        // ============ 잠금 오버레이 (수동 제어) ============
+
         AsyncFunction("showLockOverlay") { message: String ->
             val context = appContext.reactContext ?: return@AsyncFunction null
-            // 잠금 상태 저장 (부팅 후 복원용)
-            val prefs = context.getSharedPreferences("safekids_lock", Context.MODE_PRIVATE)
-            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-            prefs.edit().putBoolean("locked", true).putString("message", message).putString("lockDate", today).apply()
-
-            val intent = Intent(context, LockOverlayService::class.java).apply {
-                action = LockOverlayService.ACTION_SHOW
-                putExtra(LockOverlayService.EXTRA_MESSAGE, message)
-            }
-            context.startForegroundService(intent)
+            MonitoringService.start(context, MonitoringService.ACTION_SHOW, message)
             null
         }
 
-        // 잠금 오버레이 해제
         AsyncFunction("hideLockOverlay") {
             val context = appContext.reactContext ?: return@AsyncFunction null
-            // 잠금 상태 해제
-            val prefs = context.getSharedPreferences("safekids_lock", Context.MODE_PRIVATE)
-            prefs.edit().putBoolean("locked", false).apply()
-
-            val intent = Intent(context, LockOverlayService::class.java).apply {
-                action = LockOverlayService.ACTION_HIDE
-            }
-            context.startForegroundService(intent)
+            MonitoringService.start(context, MonitoringService.ACTION_HIDE)
             null
         }
 
-        // 잠금 상태 확인
         AsyncFunction("isLocked") {
-            LockOverlayService.isShowing
+            MonitoringService.isShowing
         }
 
-        // 배터리 잔량 확인
+        // ============ 배터리 상태 ============
+
         AsyncFunction("getBatteryLevel") {
             val context = appContext.reactContext ?: return@AsyncFunction -1
             val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
             batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         }
 
-        // 충전 중인지 확인
         AsyncFunction("isCharging") {
             val context = appContext.reactContext ?: return@AsyncFunction false
             val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager

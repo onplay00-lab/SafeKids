@@ -199,6 +199,8 @@
   "child.home.permBtn": "Allow in Settings",
   "child.home.overlayPermTitle": "🔒 Screen overlay permission needed",
   "child.home.overlayPermDesc": "To lock the screen when time is up,\nplease allow 'Display over other apps'.",
+  "child.home.batteryPermTitle": "🔋 Battery setting needed",
+  "child.home.batteryPermDesc": "To keep time tracking running,\nplease exclude SafeKids from battery optimization.",
   "child.home.nativeMode": "✅ Measuring actual app usage",
   "child.home.fallbackMode": "⏱ Measuring SafeKids app time only",
   "child.home.warnTime": "⏰ {{n}} minutes remaining. Time to wrap up!",

@@ -1,3 +1,5 @@
+// 부팅 완료 시 모니터링 서비스를 재시작한다. 잠금 복원/자정 해제 판단은
+// MonitoringService의 첫 tick이 prefs + 실시간 사용량 계산으로 수행한다.
 package expo.modules.usagestats
 
 import android.content.BroadcastReceiver
@@ -6,24 +8,18 @@ import android.content.Intent
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            val prefs = context.getSharedPreferences("safekids_lock", Context.MODE_PRIVATE)
-            val shouldLock = prefs.getBoolean("locked", false)
-            if (shouldLock) {
-                // 잠금 날짜가 오늘이 아니면 잠금 해제 (자정 지남)
-                val lockDate = prefs.getString("lockDate", null)
-                val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-                if (lockDate != null && lockDate != today) {
-                    prefs.edit().putBoolean("locked", false).remove("lockDate").apply()
-                    return
-                }
+        val action = intent.action
+        if (action != Intent.ACTION_BOOT_COMPLETED &&
+            action != "android.intent.action.QUICKBOOT_POWERON") return
 
-                val serviceIntent = Intent(context, LockOverlayService::class.java).apply {
-                    action = LockOverlayService.ACTION_SHOW
-                    putExtra(LockOverlayService.EXTRA_MESSAGE, prefs.getString("message", "사용 시간이 끝났어요"))
-                }
-                context.startForegroundService(serviceIntent)
-            }
+        val prefs = MonitoringService.prefs(context)
+        val enabled = prefs.getBoolean("monitoringEnabled", false)
+        val manualLocked = prefs.getBoolean("manualLocked", false)
+
+        if (enabled || manualLocked) {
+            try {
+                MonitoringService.start(context, MonitoringService.ACTION_TICK)
+            } catch (e: Exception) {}
         }
     }
 }

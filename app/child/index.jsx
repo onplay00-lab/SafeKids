@@ -13,6 +13,7 @@ import { startLocationTracking, startBatterySync, stopBatterySync } from '../../
 import {
   initScreentime, startUsageTracking, stopUsageTracking,
   subscribeMyScreentime, checkUsagePermission, requestUsagePermission,
+  todayStr,
 } from '../../src/services/screentimeService';
 import { subscribeAppBlocking, BLOCKABLE_APPS } from '../../src/services/appBlockingService';
 import { EMOTIONS, saveEmotionCheck, subscribeLatestEmotion } from '../../src/services/emotionService';
@@ -50,11 +51,10 @@ export default function ChildHome() {
   const [blockingData, setBlockingData] = useState(null);
   const [currentEmotion, setCurrentEmotion] = useState(null);
   const [showEmotionPicker, setShowEmotionPicker] = useState(false);
+  const [needBatteryOpt, setNeedBatteryOpt] = useState(false);
   const soundRecordingRef = useRef(false);
   const prevRemaining = useRef(null);
   const warnedAt = useRef({ warn15: false, warn5: false, warnOver: false });
-  // 백그라운드 진입 시 네이티브 오버레이를 표시할지 판단하기 위한 최신 사용량 캐시
-  const latestUsageRef = useRef({ usage: 0, limit: 240 });
 
   // Sound Around: 부모의 녹음 요청 감지 → 자동 녹음
   useEffect(() => {
@@ -145,78 +145,47 @@ export default function ChildHome() {
     return () => unsub();
   }, [user, familyId]);
 
-  // 차단된 앱 감지 및 오버레이 표시
+  // 차단 앱 목록을 네이티브 감시 서비스에 전달
+  // (실제 감지/오버레이 표시는 MonitoringService가 백그라운드에서도 수행)
   useEffect(() => {
     if (Platform.OS !== 'android' || !blockingData) return;
     const blocked = blockingData.blockedApps || {};
-    const sched = blockingData.schedule;
 
-    // 스케줄 차단 시간 체크
-    function isInBlockSchedule() {
-      if (!sched?.enabled) return false;
-      const now = new Date();
-      const hm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-      if (sched.start <= sched.end) {
-        return hm >= sched.start && hm < sched.end;
-      }
-      return hm >= sched.start || hm < sched.end;
-    }
-
-    // 차단할 패키지 목록 만들기
-    const blockedPackages = new Set();
+    const blockedPackages = [];
     for (const [key, isBlocked] of Object.entries(blocked)) {
       if (isBlocked && BLOCKABLE_APPS[key]) {
-        BLOCKABLE_APPS[key].packages.forEach(p => blockedPackages.add(p));
+        BLOCKABLE_APPS[key].packages.forEach(p => blockedPackages.push(p));
       }
     }
 
-    if (blockedPackages.size === 0 && !isInBlockSchedule()) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const hasOverlay = await ExpoUsageStats.checkOverlayPermission();
-        if (!hasOverlay) return;
-
-        const hasPerm = await ExpoUsageStats.checkPermission();
-        if (!hasPerm) return;
-
-        const stats = await ExpoUsageStats.getUsageStats(Date.now() - 5000, Date.now());
-        if (!stats || stats.length === 0) return;
-
-        // 가장 최근 포그라운드 앱 찾기
-        const sorted = stats.sort((a, b) => b.lastTimeUsed - a.lastTimeUsed);
-        const currentPkg = sorted[0]?.packageName;
-        if (!currentPkg) return;
-
-        const shouldBlock = blockedPackages.has(currentPkg) ||
-          (isInBlockSchedule() && blockedPackages.has(currentPkg));
-
-        if (shouldBlock) {
-          await ExpoUsageStats.showLockOverlay(t('child.home.appBlockMessage'));
-        }
-      } catch (e) {}
-    }, 3000);
-
-    return () => clearInterval(interval);
+    ExpoUsageStats.setMonitoringConfig({
+      blockedPackages,
+      blockMessage: t('child.home.appBlockMessage'),
+    }).catch(() => {});
   }, [blockingData]);
 
-  // 오버레이 권한 확인
+  // 오버레이 권한 + 배터리 최적화 예외 확인
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    async function checkOverlay() {
+    async function checkPerms() {
       try {
         const has = await ExpoUsageStats.checkOverlayPermission();
         if (!has) setNeedOverlayPerm(true);
       } catch (e) {}
+      try {
+        // 배터리 최적화 대상이면 삼성 등에서 감시 서비스가 수시로 죽는다
+        const ignoring = await ExpoUsageStats.isIgnoringBatteryOptimizations();
+        if (!ignoring) setNeedBatteryOpt(true);
+      } catch (e) {}
     }
-    checkOverlay();
+    checkPerms();
   }, []);
 
   // 시간 초과 시 오버레이 잠금 표시 / 해제 + 경고 알림
   useEffect(() => {
     if (screenData === null) return;
     // 어제 데이터가 남아있으면 무시 (initScreentime이 리셋 중)
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayStr();
     if (screenData.date && screenData.date !== today) return;
     const usage = screenData?.dailyUsage || 0;
     const limit = screenData?.dailyLimit || 240;
@@ -246,23 +215,24 @@ export default function ChildHome() {
       sendWarning(t('child.home.warnNotif5Title'), t('child.home.warnNotif5Body', { n: rem }));
     }
 
-    // AppState 핸들러에서 사용할 최신 사용량 캐시
-    latestUsageRef.current = { usage, limit };
-
     if (Platform.OS !== 'android') { prevRemaining.current = rem; return; }
+
+    // 네이티브 감시 서비스에 한도/잠금 메시지 동기화.
+    // 한도 초과 시 오버레이 표시는 (앱이 죽어 있어도) 서비스가 담당하고,
+    // 부모가 추가 시간을 승인해 한도가 올라가면 서비스 tick이 자동 해제한다.
+    ExpoUsageStats.setMonitoringConfig({
+      dailyLimitMinutes: limit,
+      lockMessage: t('child.home.timeOverOverlay', { limit: fmt(limit) }),
+    }).catch(() => {});
 
     async function updateOverlay() {
       try {
-        const hasOverlay = await ExpoUsageStats.checkOverlayPermission();
-        if (!hasOverlay) return;
-
         if (rem <= 0) {
           if (!warnedAt.current.warnOver) {
             warnedAt.current.warnOver = true;
             sendWarning(t('child.home.lockNotifTitle'), t('child.home.lockNotifBody'));
           }
-          // 네이티브 오버레이 표시는 AppState background 핸들러가 담당
-          // 여기서는 포그라운드 진입 시 네이티브 오버레이만 해제 (중복 방지)
+          // SafeKids가 떠 있는 동안은 RN 모달이 잠금 UI 담당 → 네이티브 오버레이 해제
           if (AppState.currentState === 'active') {
             const locked = await ExpoUsageStats.isLocked();
             if (locked) await ExpoUsageStats.hideLockOverlay();
@@ -278,48 +248,38 @@ export default function ChildHome() {
     prevRemaining.current = rem;
   }, [screenData]);
 
-  // 앱이 포그라운드로 돌아올 때 오버레이 상태 재확인 + 날짜 변경 시 스크린타임 리셋
+  // 앱이 포그라운드로 돌아올 때 오버레이 해제 + 날짜 변경 시 스크린타임 리셋
+  // (백그라운드 잠금 표시는 네이티브 MonitoringService가 담당하므로 여기서는 안 함)
   useEffect(() => {
-    let lastDate = new Date().toISOString().split('T')[0];
+    let lastDate = todayStr();
     const sub = AppState.addEventListener('change', async (state) => {
-      if (state === 'active') {
-        // 포그라운드 진입: 네이티브 시스템 오버레이는 항상 해제 (RN 모달이 잠금 UI 담당)
-        if (Platform.OS === 'android') {
-          try {
-            const locked = await ExpoUsageStats.isLocked();
-            if (locked) await ExpoUsageStats.hideLockOverlay();
-          } catch (e) {}
-        }
-        // 날짜가 바뀌었으면 스크린타임 초기화 (자정 이후 잠금 해제 대응)
-        const today = new Date().toISOString().split('T')[0];
-        if (today !== lastDate) {
-          lastDate = today;
-          try {
-            warnedAt.current = { warn15: false, warn5: false, warnOver: false };
-            prevRemaining.current = null;
-            await initScreentime();
-          } catch (e) {}
-        }
-        if (Platform.OS === 'android') {
-          try {
-            const has = await ExpoUsageStats.checkOverlayPermission();
-            if (has) setNeedOverlayPerm(false);
-          } catch (e) {}
-        }
-      } else if (state === 'background' || state === 'inactive') {
-        // 백그라운드 진입: 사용시간이 초과된 상태라면 네이티브 오버레이로 다른 앱 차단
-        if (Platform.OS !== 'android') return;
+      if (state !== 'active') return;
+
+      // 포그라운드 진입: 네이티브 시스템 오버레이는 해제 (RN 모달이 잠금 UI 담당)
+      if (Platform.OS === 'android') {
         try {
-          const { usage, limit } = latestUsageRef.current;
-          const rem = Math.max(0, (limit || 240) - (usage || 0));
-          if (rem <= 0) {
-            const hasOverlay = await ExpoUsageStats.checkOverlayPermission();
-            if (hasOverlay) {
-              await ExpoUsageStats.showLockOverlay(
-                t('child.home.timeOverOverlay', { limit: fmt(limit || 240) })
-              );
-            }
-          }
+          const locked = await ExpoUsageStats.isLocked();
+          if (locked) await ExpoUsageStats.hideLockOverlay();
+        } catch (e) {}
+      }
+      // 날짜가 바뀌었으면 스크린타임 초기화 (자정 이후 잠금 해제 대응)
+      const today = todayStr();
+      if (today !== lastDate) {
+        lastDate = today;
+        try {
+          warnedAt.current = { warn15: false, warn5: false, warnOver: false };
+          prevRemaining.current = null;
+          await initScreentime();
+        } catch (e) {}
+      }
+      if (Platform.OS === 'android') {
+        try {
+          const has = await ExpoUsageStats.checkOverlayPermission();
+          if (has) setNeedOverlayPerm(false);
+        } catch (e) {}
+        try {
+          const ignoring = await ExpoUsageStats.isIgnoringBatteryOptimizations();
+          setNeedBatteryOpt(!ignoring);
         } catch (e) {}
       }
     });
@@ -383,7 +343,7 @@ export default function ChildHome() {
       unsubscribe = subscribeMyScreentime((data) => {
         // 날짜가 어제 데이터면 initScreentime으로 리셋 (자정 넘김 대응)
         if (data && data.date) {
-          const today = new Date().toISOString().split('T')[0];
+          const today = todayStr();
           if (data.date !== today) {
             initScreentime().catch(() => {});
             return; // 리셋 후 새 데이터가 다시 콜백으로 들어옴
@@ -543,6 +503,21 @@ export default function ChildHome() {
         </View>
       )}
 
+      {/* 배터리 최적화 예외 배너 (삼성 등에서 감시 서비스가 죽지 않도록) */}
+      {needBatteryOpt && Platform.OS === 'android' && (
+        <View style={s.permBanner}>
+          <Text style={s.permTitle}>{t('child.home.batteryPermTitle')}</Text>
+          <Text style={s.permDesc}>{t('child.home.batteryPermDesc')}</Text>
+          <TouchableOpacity style={s.permBtn} onPress={async () => {
+            try {
+              await ExpoUsageStats.requestIgnoreBatteryOptimizations();
+            } catch (e) {}
+          }}>
+            <Text style={s.permBtnText}>{t('child.home.permBtn')}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* 측정 방식 뱃지 */}
       {trackingMode && (
         <View style={[s.modeBadge, trackingMode === 'native' ? s.modeNative : s.modeFallback]}>
@@ -682,8 +657,8 @@ export default function ChildHome() {
         </TouchableOpacity>
       </View>
 
-      {/* 시간 초과 잠금 모달 */}
-      <Modal visible={remaining <= 0 && screenData !== null} transparent={false} animationType="fade" onRequestClose={() => {}}>
+      {/* 시간 초과 잠금 모달 (어제 데이터로는 잠그지 않음 — 자정 직후 리셋 전 오표시 방지) */}
+      <Modal visible={remaining <= 0 && screenData !== null && screenData.date === todayStr()} transparent={false} animationType="fade" onRequestClose={() => {}}>
         <View style={s.lockOverlay}>
           <Text style={s.lockIcon}>⏰</Text>
           <Text style={s.lockTitle}>{t('child.home.lockTitle')}</Text>

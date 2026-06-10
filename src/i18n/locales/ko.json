@@ -199,6 +199,8 @@
   "child.home.permBtn": "설정에서 허용하기",
   "child.home.overlayPermTitle": "🔒 화면 잠금 권한이 필요해요",
   "child.home.overlayPermDesc": "사용 시간 초과 시 화면 잠금을 위해\n'다른 앱 위에 표시' 권한을 허용해 주세요.",
+  "child.home.batteryPermTitle": "🔋 배터리 설정이 필요해요",
+  "child.home.batteryPermDesc": "사용 시간 측정이 멈추지 않으려면\n배터리 사용량 최적화를 제외해 주세요.",
   "child.home.nativeMode": "✅ 실제 앱 사용량 측정 중",
   "child.home.fallbackMode": "⏱ SafeKids 앱 사용시간만 측정",
   "child.home.warnTime": "⏰ 남은 시간 {{n}}분입니다. 마무리하세요!",

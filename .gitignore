@@ -42,3 +42,6 @@ yarn-error.*
 /ios
 /android
 build-*.aab
+
+# 네이티브 모듈 로컬 빌드 산출물
+modules/expo-usage-stats/android/build/
